@@ -1,0 +1,2905 @@
+<#@ template debug="true" hostspecific="false" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ output extension=".txt" #>
+using System.Collections;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Serialization;
+using System.Text;
+
+namespace Silk.NET.Maths
+{
+    public unsafe struct <#= GetName(Dimension, FloatType) #><T> :
+        IEquatable<<#= GetName(Dimension, FloatType) #><T>>,
+        IFormattable,
+        IParsable<<#= GetName(Dimension, FloatType) #><T>>,
+        IReadOnlyList<T>,
+        ISpanFormattable,
+        ISpanParsable<<#= GetName(Dimension, FloatType) #><T>>,
+        IUtf8SpanFormattable,
+        IUtf8SpanParsable<<#= GetName(Dimension, FloatType) #><T>>
+        where T : unmanaged, <#= FloatType ? "IFloatingPointIeee754" : "IBinaryInteger" #><T>
+    {
+        <#
+            for (int i = 0; i < Dimension; i++)
+            {#>
+        private T _<#= GetComponentName(i, false)#>
+        <#}#>
+
+        <#
+            for (int i = 0; i < Dimension; i++)
+            {#>
+        /// <summary>
+        /// The <#= GetComponentName(i)#> component of the vector
+        /// </summary>
+        [DataMember]
+        public T <#= GetComponentName(i)#>
+        {
+            get => _<#= GetComponentName(i, false)#>;
+            set => _<#= GetComponentName(i, false)#> = value;
+        }
+        <#}#>
+
+        /// <summary>
+        /// Retrieve a reference to the component at the given index
+        /// </summary>
+        /// <param name="index">zero-based index of the component</param>
+        /// <returns>reference to the component</returns>
+        public ref T this[int index] => ref AsSpan()[index];
+
+        /// <summary>
+        /// The square length of the vector
+        /// </summary>
+        public T LengthSquared => Dot(this);
+
+        /// <summary>
+        /// The number of components in this vector
+        /// </summary>
+        public int Count { get; } = <#= Dimension #>;
+
+        /// <summary>
+        /// Creates a vector whose components have the specified values
+        /// </summary>
+        <#
+            for (int i = 0; i < Dimension; i++)
+            {#>
+        /// <param name="<#=GetComponentName(i, false)#>">the value assigned to the <#=GetComponentName(i)#> component</param>
+        <#}#>
+        public <#= GetName(Dimension, FloatType) #>(<#= ForEachComponent(Dimension, "T ", ", T ", "", false) #>>)
+        {
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+                _<#= GetComponentName(i, false) #> = <#= GetComponentName(i, false) #>;
+            <#}#>
+        }
+
+        <#
+            for (int i = MinDim; i < Dimension; i++)
+            {#>
+        /// <summary>
+        /// Creates a vector whose components are from the given vector and the specified values
+        /// </summary>
+        /// <param name="vec">the source vector</param>
+        <#
+            for (int j = i; j < Dimension; j++)
+            {#>
+        /// <param name="<#=GetComponentName(i, false)#>">the value assigned to the <#=GetComponentName(i)#> component</param>
+        <#
+            }#>
+        public <#= GetName(Dimension, FloatType) #>(<#= GetName(i, FloatType) #> vec, <#= ForEachComponent(Dimension, "T ", ", T ", "", false, i) #>>)
+        {
+            <#
+                for (int j = 0; j < i; j++)
+                {#>
+                _<#= GetComponentName(j, false) #> = vec.<#= GetComponentName(j) #>;
+            <#}#>
+            <#
+                for (int j = i; j < Dimension; j++)
+                {#>
+                _<#= GetComponentName(j, false) #> = <#= GetComponentName(j, false) #>;
+            <#}#>
+        }
+        <#}#>
+        /// <summary>
+        /// Creates a vector whose elements have the specified value
+        /// </summary>
+        /// <param name="value">the value assigned to the X and Y components</param>
+        public <#= GetName(Dimension, FloatType) #>(T value) : this(<#= ForEachComponent(Dimension, "", "value", ", ", "")#>)
+        {
+        }
+
+        /// <summary>
+        /// Creates a vector whose components from the given <see cref="ReadOnlySpan{T}"/>. The span must have at least 2 elements.
+        /// </summary>
+        /// <param name="values">the span of elements to assign to the X and Y components</param>
+        public <#= GetName(Dimension, FloatType) #>(ReadOnlySpan<T> values)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(values.Length, Count, nameof(values));
+
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+                _<#= GetComponentName(i, false) #> = values[<#= i #>];
+            <#}#>
+        }
+
+        /// <summary>
+        /// Retrieve a span representation of this vector
+        /// </summary>
+        /// <returns>the span of this vector</returns>
+        public Span<T> AsSpan() => MemoryMarshal.CreateSpan(ref _x, Count);
+
+        /// <summary>Copies the elements of the vector to a specified array starting at a specified index position.</summary>
+        /// <param name="span">The destination span.</param>
+        /// <param name="index">The index at which to copy the first element of the vector.</param>
+        /// <exception cref="ArgumentException">The number of elements in the current instance is greater than in the array.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"> is less then zero.</paramref></exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"> is greater then or equal to the array length.</paramref></exception>
+        /// <remarks>array must have a sufficient number of elements to accommodate the two vector elements. In other words, elements index and index + 1 must already exist in array.</remarks>
+        public void CopyTo(Span<T> span, int index = 0)
+        {
+            if ((index < 0) || (index >= span.Length))
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), "Specified argument was out of the range of valid values.");
+            }
+
+            if ((span.Length - index) < Count)
+            {
+                throw new ArgumentException("Value does not fall within the expected range.");
+            }
+
+            for (int i = 0; i< Count; i++)
+            {
+                span[i + index] = this[i];
+            }
+        }
+
+        /// <summary>Copies the elements of the vector to a specified array starting at a specified index position.</summary>
+        /// <param name="array">The destination array.</param>
+        /// <param name="index">The index at which to copy the first element of the vector.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="array"> is <c>null</c></paramref></exception>
+        /// <exception cref="ArgumentException">The number of elements in the current instance is greater than in the array.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"> is less then zero.</paramref></exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"> is greater then or equal to the array length.</paramref></exception>
+        /// <remarks>array must have a sufficient number of elements to accommodate the two vector elements. In other words, elements index and index + 1 must already exist in array.</remarks>
+        public void CopyTo(T[]? array, int index)
+        {
+            if (array is null)
+            {
+                throw new NullReferenceException("Object reference not set to an instance of an object.");
+            }
+
+            if ((index < 0) || (index >= array.Length))
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), "Specified argument was out of the range of valid values.");
+            }
+
+            if ((array.Length - index) < Count)
+            {
+                throw new ArgumentException("Value does not fall within the expected range.");
+            }
+
+            for (int i = 0; i < Count; i++)
+            {
+                array[i + index] = this[i];
+            }
+        }
+
+        /// <summary>
+        /// Gets a vector whose components are all equal to zero
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> Zero => new(T.Zero);
+
+        /// <summary>
+        /// Gets a vector whose components are all equal to one
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> One => new(T.One);
+
+        <#
+            for (int i = 0; i < Dimension; i++)
+            {#>
+        /// <summary>
+        /// Gets a vector whose <#= GetComponentName(i)#> component is equal to one and all others are equal to zero
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> Unit<#= GetComponentName(i)#> => new(<#
+                for (int j = 0; j < Dimension; j++)
+                {#><#= ((j == i) ? "T.One" : "T.Zero") + ((j < Dimension - 1) ? ", " : ");") #>);
+        <#}
+        }#>
+
+        #region Operators
+        /// <summary>
+        /// Returns the dot product of this and another vector
+        /// </summary>
+        /// <param name="other">the other vector</param>
+        /// <returns>the dot product</returns>
+        public T Dot(<#= GetName(Dimension, FloatType) #><T> other)
+        {
+            <#if (IsPowerOfTwo(Dimension))
+                {#>
+            switch (Unsafe.SizeOf<T>())
+            {
+                <#
+                    for (int size = 1; size <= 16; size <<= 1)
+                    {
+                        int vectorSize = int.Max(64, (size << 3) * Dimension);
+                        if (vectorSize > 512) continue; #>
+                case <#=size#>:
+                    if (Vector<#=vectorSize#><T>.IsSupported && Vector<#=vectorSize#>.IsHardwareAccelerated)
+                    {
+                        Vector<#=vectorSize#><T> result = ToVector<#=vectorSize#>() * other.ToVector<#=vectorSize#>();
+                        return <#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>result[<#= i #>]<#= i < Dimension - 1 ? " + " : ";" #><#
+                            }#>
+                    }
+                <#}#>
+            }
+            <#}#>
+            return <#
+                            for (int i = 0; i < Dimension; i++)
+                            {#><#=GetComponentName(i)#> * other.<#=GetComponentName(i)#><#= i < Dimension - 1 ? " + " : ";" #><#}#>
+        }
+
+        <#
+            if (Dimension == 3)
+            {#>
+        /// <summary>
+        /// Cross Multiply this vector with another vector
+        /// </summary>
+        /// <param name="other">the other vector</param>
+        /// <returns>the dot product</returns>
+        public <#= GetName(Dimension, FloatType) #><T> Cross(<#= GetName(Dimension, FloatType) #><T> other)
+        {
+            X = (Y * other.Z) - (Z * other.Y);
+            Y = (Z * other.X) - (X * other.Z);
+            Z = (X * other.Y) - (Y * other.X);
+        }
+        <#}#>
+
+        /// <summary>
+        /// For each component, set the value to the max value between the component and another vector's matching component
+        /// </summary>
+        /// <param name="other">the other vector</param>
+        public void Max(<#= GetName(Dimension, FloatType) #><T> other)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Max(<#=GetComponentName(i)#>, other.<#=GetComponentName(i)#>);
+            <#}#>
+        }
+        /// <summary>
+        /// For each component, set the value to the max value between the component and a scalar value
+        /// </summary>
+        /// <param name="other">the scalar</param>
+        public void Max(T other)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Max(<#=GetComponentName(i)#>, other);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, set the value to the min value between the component and another vector's matching component
+        /// </summary>
+        /// <param name="other">the other vector</param>
+        public void Min(<#= GetName(Dimension, FloatType) #><T> other)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Min(<#=GetComponentName(i)#>, other.<#=GetComponentName(i)#>);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, set the value to the min value between the component and a scalar value
+        /// </summary>
+        /// <param name="other">the scalar</param>
+        public void Min(T other)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Min(<#=GetComponentName(i)#>, other);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, clamp the value between the values of the matching components from a min and max vector
+        /// </summary>
+        /// <param name="min">the min vector</param>
+        /// <param name="max">the max vector</param>
+        public void Clamp(<#= GetName(Dimension, FloatType) #><T> min, <#= GetName(Dimension, FloatType) #><T> max)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Clamp(<#=GetComponentName(i)#>, min.<#=GetComponentName(i)#>, max.<#=GetComponentName(i)#>);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, clamp the value between the values of the matching components from a min vector and max scalar
+        /// </summary>
+        /// <param name="min">the min vector</param>
+        /// <param name="max">the max vector</param>
+        public void Clamp(<#= GetName(Dimension, FloatType) #><T> min, T max)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Clamp(<#=GetComponentName(i)#>, min.<#=GetComponentName(i)#>, max);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, clamp the value between the values of the matching components from a max vector and a min scalar
+        /// </summary>
+        /// <param name="min">the min vector</param>
+        /// <param name="max">the max vector</param>
+        public void Clamp(T min, <#= GetName(Dimension, FloatType) #><T> max)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Clamp(<#=GetComponentName(i)#>, min, max.<#=GetComponentName(i)#>);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, clamp the value between the values of a min and max scalar
+        /// </summary>
+        /// <param name="min">the min vector</param>
+        /// <param name="max">the max vector</param>
+        public void Clamp(T min, T max)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Clamp(<#=GetComponentName(i)#>, min, max);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, set the value to the absolute value of the component
+        /// </summary>
+        public void Abs()
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.Abs(<#=GetComponentName(i)#>);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, set the sign to the sign of the matching component from the sign vector
+        /// </summary>
+        /// <param name="sign">the sign vector</param>
+        public void CopySign(<#= GetName(Dimension, FloatType) #><T> sign)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.CopySign(<#=GetComponentName(i)#>, sign.<#=GetComponentName(i)#>);
+            <#
+                }#>
+        }
+        /// <summary>
+        /// For each component, set the sign to the sign of the given scalar
+        /// </summary>
+        /// <param name="sign">the sign scalar</param>
+        public void CopySign(T sign)
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.CopySign(<#=GetComponentName(i)#>, sign);
+            <#
+                }#>
+        }
+
+        /// <summary>
+        /// For each component, set the value to the appropriate sign value
+        /// </summary>
+        public void Sign()
+        {
+            <#for (int i = 0; i < Dimension; i++)
+            {#>
+            <#=GetComponentName(i)#> = T.CreateTruncating(T.Sign(<#=GetComponentName(i)#>);
+            <#
+                }#>
+        }
+
+        <#
+            for (int i = MinMatRow; i <= MaxMatRow; i++)
+            {
+                for (int j = MinMatCol; j <= MaxMatCol; j++)
+                {#>
+        /// <summary>
+        /// Transforms this vector by multiplying it in homogenous space with a given matrix
+        /// </summary>
+        /// <param name="transform">the transform matrix</param>
+        public void Transform(Matrix<#=i#>x<#=j#><#=FloatType ? "F" : "I"#><T> transform) => this = <#= GetName(Dimension, FloatType) #><T>.Transform(this, transform);
+        /// <summary>
+        /// Transforms this vector by multiplying it with a given matrix
+        /// </summary>
+        /// <param name="transform">the transform matrix</param>
+        public void TransformNormal(Matrix<#=i#>x<#=j#><#=FloatType ? "F" : "I"#><T> transform) => this = <#= GetName(Dimension, FloatType) #><T>.TransformNormal(this, transform);
+        
+        <#
+                }
+            }#>
+
+        /// <summary>
+        /// Calculate the dot product of two vectors
+        /// </summary>
+        /// <param name="lh">the first source vector</param>
+        /// <param name="rh">the second source vector</param>
+        /// <returns>the dot product</returns>
+        public static T Dot(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh) => lh.Dot(rh);
+        <#
+            if (Dimension == 3)
+            {#>
+        /// <summary>
+        /// Calculate the cross product of two vectors
+        /// </summary>
+        /// <param name="lh">the first source vector</param>
+        /// <param name="rh">the second source vector</param>
+        /// <returns>the dot product</returns>
+        public <#= GetName(Dimension, FloatType) #><T> Cross(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh)
+        {
+            lh.Cross(rh);
+            return lh;
+        }
+        <#
+            }#>
+        /// <summary>
+        /// Returns a vector whose components are the maximum of each of the pairs of components in the two source vectors
+        /// </summary>
+        /// <param name="lh">the first source vector</param>
+        /// <param name="rh">the second source vector</param>
+        /// <returns>the max vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Max(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh)
+        {
+            lh.Max(rh);
+            return lh;
+        }
+        /// <summary>
+        /// Returns a vector whose components are the maximum of a component of the source vector and a scalar
+        /// </summary>
+        /// <param name="lh">the source vector</param>
+        /// <param name="rh">the source scalar</param>
+        /// <returns>the max vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Max(<#= GetName(Dimension, FloatType) #><T> lh, T rh)
+        {
+            lh.Max(rh);
+            return lh;
+        }
+        /// <summary>
+        /// Returns a vector whose components are the minimum of each of the pairs of components in the two source vectors
+        /// </summary>
+        /// <param name="lh">the first source vector</param>
+        /// <param name="rh">the second source vector</param>
+        /// <returns>the min vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Min(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh)
+        {
+            lh.Min(rh);
+            return lh;
+        }
+        /// <summary>
+        /// Returns a vector whose components are the minimum of a component of the source vector and a scalar
+        /// </summary>
+        /// <param name="lh">the source vector</param>
+        /// <param name="rh">the source scalar</param>
+        /// <returns>the min vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Min(<#= GetName(Dimension, FloatType) #><T> lh, T rh)
+        {
+            lh.Min(rh);
+            return lh;
+        }
+        /// <summary>
+        /// Restricts a vector between a minimum and a maximum value.
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <param name="min">the min vector</param>
+        /// <param name="max">the max vector</param>
+        /// <returns></returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Clamp(<#= GetName(Dimension, FloatType) #><T> val, <#= GetName(Dimension, FloatType) #><T> min, <#= GetName(Dimension, FloatType) #><T> max)
+        {
+            val.Clamp(min, max);
+            return lh;
+        }
+        /// <summary>
+        /// Restricts a vector between a minimum and a maximum value.
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <param name="min">the min vector</param>
+        /// <param name="max">the max scalar</param>
+        /// <returns></returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Clamp(<#= GetName(Dimension, FloatType) #><T> val, <#= GetName(Dimension, FloatType) #><T> min, T max)
+        {
+            val.Clamp(min, max);
+            return lh;
+        }
+        /// <summary>
+        /// Restricts a vector between a minimum and a maximum value.
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <param name="min">the min scalar</param>
+        /// <param name="max">the max vector</param>
+        /// <returns></returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Clamp(<#= GetName(Dimension, FloatType) #><T> val, T min, <#= GetName(Dimension, FloatType) #><T> max)
+        {
+            val.Clamp(min, max);
+            return lh;
+        }
+        /// <summary>
+        /// Restricts a vector between a minimum and a maximum value.
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <param name="min">the min scalar</param>
+        /// <param name="max">the max scalar</param>
+        /// <returns></returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Clamp(<#= GetName(Dimension, FloatType) #><T> val, T min, T max) =>
+        {
+            val.Clamp(min, max);
+            return lh;
+        }
+        /// <summary>
+        /// Returns a vector whose components are the absolute values of each of the specified vector's components.
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <returns>the absolute value vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Abs(<#= GetName(Dimension, FloatType) #><T> val)
+        {
+            val.Abs();
+            return lh;
+        }
+        /// <summary>
+        /// Returns a vector whose components have the value of the specified vector's components but with the sign of the sign vector's components.
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <param name="sign">the sign vector</param>
+        /// <returns>the modified vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CopySign(<#= GetName(Dimension, FloatType) #><T> val, <#= GetName(Dimension, FloatType) #><T> sign)
+        {
+            val.CopySign(sign);
+            return lh;
+        }
+        /// <summary>
+        /// Returns a vector whose components have the value of the specified vector's components but with the sign of the sign scalar.
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <param name="sign">the sign scalar</param>
+        /// <returns>the modified vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CopySign(<#= GetName(Dimension, FloatType) #><T> val, T sign)
+        {
+            val.CopySign(sign);
+            return lh;
+        }
+        /// <summary>
+        /// Returns a vector whose components have the value of the specified scalar but with the sign of the sign vector's components.
+        /// </summary>
+        /// <param name="val">the source scalar</param>
+        /// <param name="sign">the sign vector</param>
+        /// <returns>the modified vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CopySign(T val, <#= GetName(Dimension, FloatType) #><T> sign)
+        {
+            return new(<#for (int i = 0; i < Dimension; i++)
+            {#>
+            T.CopySign(val, sign.<#=GetComponentName(i)#><#=i < Dimension - 1 ? ", " : ""#>
+            <#
+                }#>);
+        }
+        /// <summary>
+        /// Returns a vector whose components have the value of the sign of the specified vector's components.
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <returns>the sign vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Sign(<#= GetName(Dimension, FloatType) #><T> val)
+        {
+            val.Sign();
+            return val;
+        }
+
+        /// <summary>
+        /// Reflects this vector across the given normal vector
+        /// </summary>
+        /// <param name="normal">the normal vector</param>
+        public void Reflect(<#= GetName(Dimension, FloatType) #><T> normal)
+        {
+            <#= GetName(Dimension, FloatType) #><T> temp = normal * Dot(normal);
+            this -= (temp + temp);
+        }
+
+        /// <summary>
+        /// Returns the reflected incident vector across the given normal vector
+        /// </summary>
+        /// <param name="incident">the incident vector</param>
+        /// <param name="normal">the normal vector</param>
+        /// <returns>the reflected vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Reflect(<#= GetName(Dimension, FloatType) #><T> incident, <#= GetName(Dimension, FloatType) #><T> normal)
+        {
+            incident.Reflect(normal);
+            return incident;
+        }
+
+        /// <summary>
+        /// Returns a vector whose components have been linearly interpolated between the two source vectors based on the time vector
+        /// </summary>
+        /// <param name="vector0">the first source vector</param>
+        /// <param name="vector1">the second source vector</param>
+        /// <param name="t">the time vector</param>
+        /// <returns>the interpolated vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Lerp(<#= GetName(Dimension, FloatType) #><T> vector0, <#= GetName(Dimension, FloatType) #><T> vector1, <#= GetName(Dimension, FloatType) #><T> t)
+        {
+            return vector0 * <#= GetName(Dimension, FloatType) #><T>.Max(T.One - t, T.Zero) + vector1 * <#= GetName(Dimension, FloatType) #><T>.Max(t, T.Zero);
+        }
+        /// <summary>
+        /// Returns a vector whose components have been linearly interpolated between the two source vectors based on the time vector which is clamped between 0 and 1
+        /// </summary>
+        /// <param name="vector0">the first vector</param>
+        /// <param name="vector1">the second vector</param>
+        /// <param name="t">the time vector</param>
+        /// <returns>the interpolated vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> ClampedLerp(<#= GetName(Dimension, FloatType) #><T> vector0, <#= GetName(Dimension, FloatType) #><T> vector1, <#= GetName(Dimension, FloatType) #><T> t)
+        {
+            t = <#= GetName(Dimension, FloatType) #><T>.Clamp(t, T.Zero, T.One);
+            return vector0 * (T.One - t) + vector1 * t;
+        }
+
+        /// <summary>
+        /// Returns a vector whose components have been linearly interpolated between the two source vectors based on the time scalar
+        /// </summary>
+        /// <param name="vector0">the first vector</param>
+        /// <param name="vector1">the second vector</param>
+        /// <param name="t">the time scalar</param>
+        /// <returns>the interpolated vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Lerp(<#= GetName(Dimension, FloatType) #><T> vector0, <#= GetName(Dimension, FloatType) #><T> vector1, T t)
+        {
+            return vector0 * T.Max(T.One - t, T.Zero) * vector1 * T.Max(t, T.Zero);
+        }
+        /// <summary>
+        /// Returns a vector whose components have been linearly interpolated between the two source vectors based on the time scalar which is clamped between 0 and 1
+        /// </summary>
+        /// <param name="vector0">the first vector</param>
+        /// <param name="vector1">the second vector</param>
+        /// <param name="t">the time scalar</param>
+        /// <returns>the interpolated vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> ClampedLerp(<#= GetName(Dimension, FloatType) #><T> vector0, <#= GetName(Dimension, FloatType) #><T> vector1, T t)
+        {
+            t = T.Clamp(t, T.Zero, T.One);
+            return vector0 * (T.One - t) * vector1 * t;
+        }
+
+        <#
+            for (int i = MinMatRow; i <= MaxMatRow; i++)
+            {
+                for (int j = MinMatCol; j <= MaxMatCol; j++)
+                {#>
+        /// <summary>
+        /// Transforms this vector by multiplying it in homogenous space with a given matrix
+        /// </summary>
+        /// <param name="value">the source vector</param>
+        /// <param name="transform">the transform matrix</param>
+        public static <#= GetName(Dimension, FloatType) #><T> Transform(<#= GetName(Dimension, FloatType) #><T> value, Matrix<#=i#>x<#=j#><#=FloatType ? "F" : "I"#><T> transform) => <#=GetMatrixMultiplication(i, j, Dimension, FloatType, "value", "transform", true)#>
+        /// <summary>
+        /// Transforms this vector by multiplying it with a given matrix
+        /// </summary>
+        /// <param name="value">the source vector</param>
+        /// <param name="transform">the transform matrix</param>
+        public static <#= GetName(Dimension, FloatType) #><T> TransformNormal(<#= GetName(Dimension, FloatType) #><T> value, Matrix<#=i#>x<#=j#><#=FloatType ? "F" : "I"#><T> transform) => <#=GetMatrixMultiplication(i, j, Dimension, FloatType, "value", "transform", false)#>
+        
+        <#
+                }
+            }#>        
+
+        /// <summary>Adds two vectors together.</summary>
+        /// <param name="lh">The first source vector.</param>
+        /// <param name="rh">The second source vector.</param>
+        /// <returns>The summed vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator +(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh)
+        {
+            <#if (IsPowerOfTwo(Dimension))
+                {#>
+            switch (Unsafe.SizeOf<T>())
+            {
+                <#
+                    for (int size = 1; size <= 16; size <<= 1)
+                    {
+                        int vectorSize = int.Max(64, (size << 3) * Dimension);
+                        if (vectorSize > 512) continue; #>
+                case <#=size#>:
+                    if (Vector<#=vectorSize#><T>.IsSupported && Vector<#=vectorSize#>.IsHardwareAccelerated)
+                    {
+                        Vector<#=vectorSize#><T> result = lh.ToVector<#=vectorSize#>() + rh.ToVector<#=vectorSize#>();
+                        return Unsafe.ReadUnaligned<<#= GetName(Dimension, FloatType) #><T>>(ref Unsafe.As<Vector<#=vectorSize#><T>, byte>(ref result));
+                    }
+                <#
+                    }#>
+            }
+            <#
+                }#>
+            return new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> + rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        }
+
+        /// <summary>Subtracts the second vector from the first.</summary>
+        /// <param name="lh">The first source vector.</param>
+        /// <param name="rh">The second source vector.</param>
+        /// <returns>The subtracted vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator -(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh)
+        {
+            <#if (IsPowerOfTwo(Dimension))
+                {#>
+            switch (Unsafe.SizeOf<T>())
+            {
+                <#
+                    for (int size = 1; size <= 16; size <<= 1)
+                    {
+                        int vectorSize = int.Max(64, (size << 3) * Dimension);
+                        if (vectorSize > 512) continue; #>
+                case <#=size#>:
+                    if (Vector<#=vectorSize#><T>.IsSupported && Vector<#=vectorSize#>.IsHardwareAccelerated)
+                    {
+                        Vector<#=vectorSize#><T> result = lh.ToVector<#=vectorSize#>() - rh.ToVector<#=vectorSize#>();
+                        return Unsafe.ReadUnaligned<<#= GetName(Dimension, FloatType) #><T>>(ref Unsafe.As<Vector<#=vectorSize#><T>, byte>(ref result));
+                    }
+                <#
+                    }#>
+            }
+            <#
+                }#>
+            return new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> - rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        }
+
+        /// <summary>Multiplies two vectors together.</summary>
+        /// <param name="lh">The first source vector.</param>
+        /// <param name="rh">The second source vector.</param>
+        /// <returns>The multiplied vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator *(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh)
+        {
+            <#if (IsPowerOfTwo(Dimension))
+                {#>
+            switch (Unsafe.SizeOf<T>())
+            {
+                <#
+                    for (int size = 1; size <= 16; size <<= 1)
+                    {
+                        int vectorSize = int.Max(64, (size << 3) * Dimension);
+                        if (vectorSize > 512) continue; #>
+                case <#=size#>:
+                    if (Vector<#=vectorSize#><T>.IsSupported && Vector<#=vectorSize#>.IsHardwareAccelerated)
+                    {
+                        Vector<#=vectorSize#><T> result = lh.ToVector<#=vectorSize#>() * rh.ToVector<#=vectorSize#>();
+                        return Unsafe.ReadUnaligned<<#= GetName(Dimension, FloatType) #><T>>(ref Unsafe.As<Vector<#=vectorSize#><T>, byte>(ref result));
+                    }
+                <#
+                    }#>
+            }
+            <#
+                }#>
+            return new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> * rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        }
+
+        /// <summary>Divides the second vector from the first.</summary>
+        /// <param name="lh">The first source vector.</param>
+        /// <param name="rh">The second source vector.</param>
+        /// <returns>The divided vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator /(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh)
+        {
+            <#if (IsPowerOfTwo(Dimension))
+                {#>
+            switch (Unsafe.SizeOf<T>())
+            {
+                <#
+                    for (int size = 1; size <= 16; size <<= 1)
+                    {
+                        int vectorSize = int.Max(64, (size << 3) * Dimension);
+                        if (vectorSize > 512) continue; #>
+                case <#=size#>:
+                    if (Vector<#=vectorSize#><T>.IsSupported && Vector<#=vectorSize#>.IsHardwareAccelerated)
+                    {
+                        Vector<#=vectorSize#><T> result = lh.ToVector<#=vectorSize#>() / rh.ToVector<#=vectorSize#>();
+                        return Unsafe.ReadUnaligned<<#= GetName(Dimension, FloatType) #><T>>(ref Unsafe.As<Vector<#=vectorSize#><T>, byte>(ref result));
+                    }
+                <#
+                    }#>
+            }
+            <#
+                }#>
+            return new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> / rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        }
+
+        /// <summary>Divides the second vector from the first and returns the remainder.</summary>
+        /// <param name="lh">The first source vector.</param>
+        /// <param name="rh">The second source vector.</param>
+        /// <returns>The remainder vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator %(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> % rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+
+        /// <summary>
+        /// Negates the vector
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <returns>the negated vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator -(<#= GetName(Dimension, FloatType) #><T> val) => Zero - val;
+        /// <summary>
+        /// Returns the vector
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <returns>the vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator +(<#= GetName(Dimension, FloatType) #><T> val) => val;
+
+        /// <summary>Adds a scalar to the vector component-wise.</summary>
+        /// <param name="lh">The source vector.</param>
+        /// <param name="rh">The source scalar.</param>
+        /// <returns>The summed vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator +(<#= GetName(Dimension, FloatType) #><T> lh, T rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> + rh<#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        /// <summary>Subtracts a scalar from the vector component-wise.</summary>
+        /// <param name="lh">The source vector.</param>
+        /// <param name="rh">The source scalar.</param>
+        /// <returns>The subtracted vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator -(<#= GetName(Dimension, FloatType) #><T> lh, T rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> - rh<#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        /// <summary>Multiplies a scalar to the vector component-wise.</summary>
+        /// <param name="lh">The source vector.</param>
+        /// <param name="rh">The source scalar.</param>
+        /// <returns>The multiplied vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator *(<#= GetName(Dimension, FloatType) #><T> lh, T rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> * rh<#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        /// <summary>Divides a vector component-wise by a scalar.</summary>
+        /// <param name="lh">The source vector.</param>
+        /// <param name="rh">The source scalar.</param>
+        /// <returns>The divided vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator /(<#= GetName(Dimension, FloatType) #><T> lh, T rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> / rh<#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        /// <summary>Divides a vector component-wise by a scalar and returns the remainders.</summary>
+        /// <param name="lh">The source vector.</param>
+        /// <param name="rh">The source scalar.</param>
+        /// <returns>The remainder vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator %(<#= GetName(Dimension, FloatType) #><T> lh, T rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> % rh<#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+
+        /// <summary>Adds a scalar to the vector component-wise.</summary>
+        /// <param name="lh">The source scalar.</param>
+        /// <param name="rh">The source vector.</param>
+        /// <returns>The summed vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator +(T lh, <#= GetName(Dimension, FloatType) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh + rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        /// <summary>Subtracts a scalar from the vector component-wise.</summary>
+        /// <param name="lh">The source scalar.</param>
+        /// <param name="rh">The source vector.</param>
+        /// <returns>The subtracted vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator -(T lh, <#= GetName(Dimension, FloatType) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh - rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        /// <summary>Multiplies a scalar to the vector component-wise.</summary>
+        /// <param name="lh">The source scalar.</param>
+        /// <param name="rh">The source vector.</param>
+        /// <returns>The multiplied vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator *(T lh, <#= GetName(Dimension, FloatType) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh * rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        /// <summary>Divides a vector component-wise by a scalar.</summary>
+        /// <param name="lh">The source scalar.</param>
+        /// <param name="rh">The source vector.</param>
+        /// <returns>The divided vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator /(T lh, <#= GetName(Dimension, FloatType) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh / rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+        /// <summary>Divides a vector component-wise by a scalar and returns the remainders.</summary>
+        /// <param name="lh">The source scalar.</param>
+        /// <param name="rh">The source vector.</param>
+        /// <returns>The remainder vector.</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> operator %(T lh, <#= GetName(Dimension, FloatType) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh % rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : ");" #><#
+                            }#>
+
+        /// <summary>Returns a boolean indicating whether the two given vectors are equal.</summary>
+        /// <param name="lh">The first vector to compare.</param>
+        /// <param name="rh">The second vector to compare.</param>
+        /// <returns>True if the vectors are equal; False otherwise.</returns>
+        public static bool operator ==(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh) => <#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> == rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? " && " : ";" #><#
+                            }#>
+        /// <summary>Returns a boolean indicating whether the two given vectors are not equal.</summary>
+        /// <param name="lh">The first vector to compare.</param>
+        /// <param name="rh">The second vector to compare.</param>
+        /// <returns>True if the vectors are not equal; False if they are equal.</returns>
+        public static bool operator !=(<#= GetName(Dimension, FloatType) #><T> lh, <#= GetName(Dimension, FloatType) #><T> rh) => <#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> != rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? " || " : ";" #><#
+                            }#>
+        #endregion
+
+        #region Equality
+        /// <summary>Returns a boolean indicating whether this vector and the given vector are equal</summary>
+        /// <param name="other">The vector to compare this instance to.</param>
+        /// <returns>True if the other vector is equal to this instance; False otherwise.</returns>
+        public bool Equals(<#= GetName(Dimension, FloatType) #><T> other) => <#
+                            for (int i = 0; i < Dimension; i++)
+                            {#><#=GetComponentName(i)#>.Equals(other.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? " && " : ";" #><#
+                            }#>
+
+        /// <summary>Returns a boolean indicating whether the given Object is equal to this vector instance.</summary>
+        /// <param name="obj">The Object to compare against.</param>
+        /// <returns>True if the Object is equal to this Vector2D; False otherwise.</returns>
+        public override bool Equals([NotNullWhen(true)] object? obj) => (obj is <#= GetName(Dimension, FloatType) #><T> other) && Equals(other);
+
+        /// <summary>Returns a boolean indicating whether this vector and the given vector are equal</summary>
+        /// <param name="other">The vector to compare this instance to.</param>
+        /// <returns>True if the other vector is equal to this instance; False otherwise.</returns>
+        public bool Equals(Vector<#=Dimension#> other)
+        {
+            <#if (FloatType)
+                {#>
+            if (typeof(T) == typeof(float))
+            {
+                if (Vector128.IsHardwareAccelerated)
+                {
+                    return Unsafe.BitCast<<#= GetName(Dimension, FloatType) #><T>, Vector2>(this).AsVector128().Equals(other.AsVector128());
+                }
+                else
+                {
+                    return Unsafe.BitCast<<#= GetName(Dimension, FloatType) #><T>, Vector2>(this).Equals(other);
+                }
+            }
+            <#
+                }#>
+            return <#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>float.CreateTruncating(<#=GetComponentName(i)#>.Equals(other.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? " && " : ";" #><#
+                            }#>
+        }
+
+        /// <inheritdoc/>
+        public override int GetHashCode() => HashCode.Combine(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#><#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        #endregion
+
+        #region Vector Conversions
+        /// <summary>
+        /// Converts this vector into a <see cref="Vector64{T}"/>
+        /// </summary>
+        /// <returns>the <see cref="Vector64{T}"/></returns>
+        public Vector64<T> ToVector64()
+        {
+            if (Count >= Vector64<T>.Count)
+            {
+                return Vector64.Create<T>(AsSpan());
+            }
+
+            T* array = stackalloc T[Vector64<T>.Count];
+            for (int i = 0; i < Count; i++)
+            {
+                array[i] = this[i];
+            }
+
+            return Vector64.Create<T>(new Span<T>(array, Vector64<T>.Count));
+        }
+
+        /// <summary>
+        /// Converts this vector into a <see cref="Vector128{T}"/>
+        /// </summary>
+        /// <returns>the <see cref="Vector128{T}"/></returns>
+        public Vector128<T> ToVector128()
+        {
+            if (Count >= Vector128<T>.Count)
+            {
+                return Vector128.Create<T>(AsSpan());
+            }
+
+            T* array = stackalloc T[Vector128<T>.Count];
+            for (int i = 0; i < Count; i++)
+            {
+                array[i] = this[i];
+            }
+
+            return Vector128.Create<T>(new Span<T>(array, Vector128<T>.Count));
+        }
+
+        /// <summary>
+        /// Converts this vector into a <see cref="Vector256{T}"/>
+        /// </summary>
+        /// <returns>the <see cref="Vector256{T}"/></returns>
+        public Vector256<T> ToVector256()
+        {
+            if (Count >= Vector256<T>.Count)
+            {
+                return Vector256.Create<T>(AsSpan());
+            }
+
+            T* array = stackalloc T[Vector256<T>.Count];
+            for (int i = 0; i < Count; i++)
+            {
+                array[i] = this[i];
+            }
+
+            return Vector256.Create<T>(new Span<T>(array, Vector256<T>.Count));
+        }
+
+        /// <summary>
+        /// Converts this vector into a <see cref="Vector512{T}"/>
+        /// </summary>
+        /// <returns>the <see cref="Vector512{T}"/></returns>
+        public Vector512<T> ToVector512()
+        {
+            if (Count >= Vector512<T>.Count)
+            {
+                return Vector512.Create<T>(AsSpan());
+            }
+
+            T* array = stackalloc T[Vector512<T>.Count];
+            for (int i = 0; i < Count; i++)
+            {
+                array[i] = this[i];
+            }
+
+            return Vector512.Create<T>(new Span<T>(array, Vector512<T>.Count));
+        }
+
+        //Floating Point Conversions
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, true) #>{Half}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, true) #><Half>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>Half.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, true) #>{Single}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, true) #><float>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>float.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, true) #>{Double}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, true) #><double>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>double.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, true) #>{NFloat}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, true) #><NFloat>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>NFloat.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, true) #>{Half}"/> and checks for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, true) #><Half>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>Half.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, true) #>{Single}"/> and checks for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, true) #><float>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>float.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, true) #>{Double}"/> and checks for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, true) #><double>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>double.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, true) #>{NFloat}"/> and checks for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, true) #><NFloat>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>NFloat.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// Converts the specified floating point vector to this vector type, checking for overflow
+        /// </summary>
+        /// <typeparam name="TOther">the other scalar type</typeparam>
+        /// <param name="value">the source vector</param>
+        /// <returns>the converted vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CreateChecked<TOther>(<#= GetName(Dimension, true) #><TOther> value) where TOther : unmanaged, IFloatingPointIeee754<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CreateChecked(value.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified floating point vector to this vector type, saturating any values outside of the valid range
+        /// </summary>
+        /// <typeparam name="TOther">the other scalar type</typeparam>
+        /// <param name="value">the source vector</param>
+        /// <returns>the converted vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CreateSaturating<TOther>(<#= GetName(Dimension, true) #><TOther> value) where TOther : unmanaged, IFloatingPointIeee754<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CreateSaturating(value.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified floating point vector to this vector type, truncating any values outside of the valid range
+        /// </summary>
+        /// <typeparam name="TOther">the other scalar type</typeparam>
+        /// <param name="value">the source vector</param>
+        /// <returns>the converted vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CreateTruncating<TOther>(<#= GetName(Dimension, true) #><TOther> value) where TOther : unmanaged, IFloatingPointIeee754<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CreateTruncating(value.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        //Binary Integer Conversions
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Byte}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><byte>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>byte.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{SByte}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><sbyte>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>sbyte.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{UInt16}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><ushort>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>ushort.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Int16}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><short>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>short.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{UInt32}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><uint>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>uint.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Int32}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><int>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>int.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{UInt64}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><ulong>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>ulong.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Int64}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><long>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>long.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{UInt128}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><UInt128>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>UInt128.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Int128}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><Int128>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>Int128.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{nuint}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><nuint>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>nuint.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{nint}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, false) #><nint>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>nint.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Byte}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><byte>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>byte.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{SByte}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><sbyte>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>sbyte.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{UInt16}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><ushort>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>ushort.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Int16}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><short>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>short.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{UInt32}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><uint>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>uint.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Int32}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><int>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>int.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{UInt64}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><ulong>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>ulong.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Int64}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><long>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>long.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{UInt128}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><UInt128>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>UInt128.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{Int128}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><Int128>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>Int128.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{nuint}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><nuint>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>nuint.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, false) #>{nint}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, false) #><nint>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>nint.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// Converts the specified binary integer vector to this vector type, checking for overflow
+        /// </summary>
+        /// <typeparam name="TOther">the other scalar type</typeparam>
+        /// <param name="value">the source vector</param>
+        /// <returns>the converted vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CreateChecked<TOther>(<#= GetName(Dimension, false) #><TOther> value) where TOther : unmanaged, IBinaryInteger<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CreateChecked(value.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified binary integer vector to this vector type, saturating any values outside of the valid range
+        /// </summary>
+        /// <typeparam name="TOther">the other scalar type</typeparam>
+        /// <param name="value">the source vector</param>
+        /// <returns>the converted vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CreateSaturating<TOther>(<#= GetName(Dimension, false) #><TOther> value) where TOther : unmanaged, IBinaryInteger<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CreateSaturating(value.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified binary integer vector to this vector type, truncating any values outside of the valid range
+        /// </summary>
+        /// <typeparam name="TOther">the other scalar type</typeparam>
+        /// <param name="value">the source vector</param>
+        /// <returns>the converted vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CreateTruncating<TOther>(<#= GetName(Dimension, false) #><TOther> value) where TOther : unmanaged, IBinaryInteger<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CreateTruncating(value.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        //System.Numberics Conversions
+
+        <# if (Dimension < 5 && Dimension > 1)
+        {#>
+        /// <summary>
+        /// Converts the specified vector into a <see cref="Vector<#=Dimension#>"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator Vector<#=Dimension#>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>float.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, FloatType) #>{T}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(Dimension, FloatType) #><T>(Vector2 val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CreateTruncating(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// Converts the specified vector into a <see cref="Vector<#=Dimension#>"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked Vector<#=Dimension#>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>float.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(Dimension, FloatType) #>{T}"/> and checking for overflow
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator checked <#= GetName(Dimension, FloatType) #><T>(Vector2 val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CreateChecked(val.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        
+        <#
+            }#>
+        /// <summary>
+        /// Converts the specified vector into a <see cref="Vector64{T}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator Vector64<T>(<#= GetName(Dimension, FloatType) #><T> val) => val.ToVector64();
+        /// <summary>
+        /// Converts the specified vector into a <see cref="Vector128{T}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator Vector128<T>(<#= GetName(Dimension, FloatType) #><T> val) => val.ToVector128();
+        /// <summary>
+        /// Converts the specified vector into a <see cref="Vector256{T}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator Vector256<T>(<#= GetName(Dimension, FloatType) #><T> val) => val.ToVector256();
+        /// <summary>
+        /// Converts the specified vector into a <see cref="Vector512{T}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator Vector512<T>(<#= GetName(Dimension, FloatType) #><T> val) => val.ToVector512();
+
+        //lower dimension Conversions
+        <#
+            for (int dim = MinDim; dim < Dimension; dim++)
+            {#>
+        /// <summary>
+        /// Converts the specified vector into a <see cref="<#= GetName(dim, FloatType) #>{T}"/>
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        public static explicit operator <#= GetName(dim, FloatType) #><T>(<#= GetName(Dimension, FloatType) #><T> val) => new(<#
+                            for (int i = 0; i < dim; i++)
+                            {#><#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        <#}#>
+        #endregion
+
+        #region Format
+        /// <summary>Returns the string representation of the current instance using default formatting.</summary>
+        /// <returns>The string representation of the current instance.</returns>
+        /// <remarks>This method returns a string in which each element of the vector is formatted using the "G" (general) format string and the formatting conventions of the current thread culture. The "&lt;" and "&gt;" characters are used to begin and end the string, and the current culture's <see cref="NumberFormatInfo.NumberGroupSeparator" /> property followed by a space is used to separate each element.</remarks>
+        public override string ToString()
+        {
+            return ToString("G", null);
+        }
+
+        /// <summary>Returns the string representation of the current instance using the specified format string to format individual elements.</summary>
+        /// <param name="format">A standard or custom numeric format string that defines the format of individual elements.</param>
+        /// <returns>The string representation of the current instance.</returns>
+        /// <remarks>This method returns a string in which each element of the vector is formatted using <paramref name="format" /> and the current culture's formatting conventions. The "&lt;" and "&gt;" characters are used to begin and end the string, and the current culture's <see cref="NumberFormatInfo.NumberGroupSeparator" /> property followed by a space is used to separate each element.</remarks>
+        /// <related type="Article" href="/dotnet/standard/base-types/standard-numeric-format-strings">Standard Numeric Format Strings</related>
+        /// <related type="Article" href="/dotnet/standard/base-types/custom-numeric-format-strings">Custom Numeric Format Strings</related>
+        public string ToString([StringSyntax(StringSyntaxAttribute.NumericFormat)] string? format)
+        {
+            return ToString(format, null);
+        }
+
+        /// <summary>Returns the string representation of the current instance using the specified format string to format individual elements and the specified format provider to define culture-specific formatting.</summary>
+        /// <param name="format">A standard or custom numeric format string that defines the format of individual elements.</param>
+        /// <param name="formatProvider">A format provider that supplies culture-specific formatting information.</param>
+        /// <returns>The string representation of the current instance.</returns>
+        /// <remarks>This method returns a string in which each element of the vector is formatted using <paramref name="format" /> and <paramref name="formatProvider" />. The "&lt;" and "&gt;" characters are used to begin and end the string, and the format provider's <see cref="NumberFormatInfo.NumberGroupSeparator" /> property followed by a space is used to separate each element.</remarks>
+        /// <related type="Article" href="/dotnet/standard/base-types/standard-numeric-format-strings">Standard Numeric Format Strings</related>
+        /// <related type="Article" href="/dotnet/standard/base-types/custom-numeric-format-strings">Custom Numeric Format Strings</related>
+        public string ToString([StringSyntax(StringSyntaxAttribute.NumericFormat)] string? format, IFormatProvider? formatProvider)
+        {
+            string separator = NumberFormatInfo.GetInstance(formatProvider).NumberGroupSeparator;
+
+            Span<char> initialBuffer = stackalloc char[Math.Min((2 + (Count - 1) + (separator.Length * (Count - 1)) + (Count * 2)), 256)];
+
+            // We can't use an interpolated string here because it won't allow us to pass `format`
+            DefaultInterpolatedStringHandler handler = new(
+                4 + (separator.Length * 2),
+                Count,
+                formatProvider,
+                initialBuffer
+            );
+
+            handler.AppendLiteral("(");
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            handler.AppendFormatted(<#=GetComponentName(i)#>, format);
+                <# if (i < Dimension - 1)
+                {#>
+                handler.AppendLiteral(separator);
+                handler.AppendLiteral(" ");
+                <#
+                    }
+                }#>
+            handler.AppendLiteral(")");
+
+            return handler.ToStringAndClear();
+        }
+
+        /// <inheritdoc/>
+        public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+        {
+            string separator = NumberFormatInfo.GetInstance(provider).NumberGroupSeparator;
+
+            // We can't use an interpolated string here because it won't allow us to pass `format`
+            MemoryExtensions.TryWriteInterpolatedStringHandler handler = new(
+                4 + (separator.Length * 2),
+                Count,
+                destination,
+                provider,
+                out bool shouldAppend
+            );
+            if (!shouldAppend)
+            {
+                charsWritten = 0;
+                return false;
+            }
+
+            // Annoyingly we need to turn the span into a string for the string handler
+            string? formatString = format.Length > 0 ? new string(format) : null;
+
+            _ =
+                handler.AppendLiteral("(") &&
+                <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            handler.AppendFormatted(<#=GetComponentName(i)#>, formatString) &&
+                    <# if (i < Dimension - 1)
+                    {#>
+            handler.AppendLiteral(separator) &&
+            handler.AppendLiteral(" ") &&
+                    <#
+                        }
+                    }#>
+                handler.AppendLiteral(")");
+
+            return destination.TryWrite(ref handler, out charsWritten);
+        }
+
+        /// <inheritdoc/>
+        public bool TryFormat(Span<byte> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+        {
+            charsWritten = 0;
+            byte[] openBracket = Encoding.UTF8.GetBytes("(");
+            byte[] separator = Encoding.UTF8.GetBytes(NumberFormatInfo.GetInstance(provider).NumberGroupSeparator);
+            byte[] space = Encoding.UTF8.GetBytes(" ");
+            byte[] closeBracket = Encoding.UTF8.GetBytes(")");
+
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            byte[] <#=GetComponentName(i, false)#>Bytes = Encoding.UTF8.GetBytes(<#=GetComponentName(i)#>.ToString(new(format), provider));
+            charsWritten += <#=GetComponentName(i, false)#>Bytes.Length;
+                <#
+                    }#>
+            charsWritten = separator.Length + openBracket.Length + closeBracket.Length + space.Length;
+
+            if (charsWritten > destination.Length)
+            {
+                charsWritten = 0;
+                return false;
+            }
+            charsWritten = 0;
+            for (int i = 0; i < openBracket.Length; i++)
+                destination[charsWritten++] = openBracket[i];
+                <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            for (int i = 0; i < <#=GetComponentName(i, false)#>Bytes.Length; i++)
+                destination[charsWritten++] = <#=GetComponentName(i, false)#>Bytes[i];
+                    <# if (i < Dimension - 1)
+                    {#>
+            for (int i = 0; i < separator.Length; i++)
+                destination[charsWritten++] = separator[i];
+            for (int i = 0; i < space.Length; i++)
+                destination[charsWritten++] = space[i];
+                    <#
+                        }
+                    }#>
+            for (int i = 0; i < closeBracket.Length; i++)
+                destination[charsWritten++] = closeBracket[i];
+
+            return true;
+        }
+        #endregion
+
+        #region List
+        /// <inheritdoc/>
+        T IReadOnlyList<T>.this[int index] => AsSpan()[index];
+
+        /// <inheritdoc/>
+        public IEnumerator<T> GetEnumerator() => new Enumerator(this);
+
+        /// <inheritdoc/>
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        private class Enumerator(<#= GetName(Dimension, FloatType) #><T> Vector) : IEnumerator<T>
+        {
+            private int _index = -1;
+
+            /// <inheritdoc/>
+            public T Current => Vector[_index];
+
+            /// <inheritdoc/>
+            object IEnumerator.Current => Current;
+
+            /// <inheritdoc/>
+            public void Dispose() { }
+
+            /// <inheritdoc/>
+            public bool MoveNext()
+            {
+                _index++;
+                return _index >= Vector.Count;
+            }
+
+            /// <inheritdoc/>
+            public void Reset() => _index = -1;
+        }
+        #endregion
+
+        #region Parse
+        /// <inheritdoc/>
+        static <#= GetName(Dimension, FloatType) #><T> IParsable<<#= GetName(Dimension, FloatType) #><T>>.Parse(string s, IFormatProvider? provider)
+            => Parse(s.AsSpan(), NumberStyles.None, provider);
+
+        /// <inheritdoc/>
+        static <#= GetName(Dimension, FloatType) #><T> ISpanParsable<<#= GetName(Dimension, FloatType) #><T>>.Parse(ReadOnlySpan<char> s, IFormatProvider? provider)
+            => Parse(s, NumberStyles.None, provider);
+
+        /// <inheritdoc/>
+        static <#= GetName(Dimension, FloatType) #><T> IUtf8SpanParsable<<#= GetName(Dimension, FloatType) #><T>>.Parse(ReadOnlySpan<byte> s, IFormatProvider? provider)
+            => Parse(s, NumberStyles.None, provider);
+
+        /// <inheritdoc/>
+        public static <#= GetName(Dimension, FloatType) #><T> Parse(string s, NumberStyles style = default, IFormatProvider? provider = null)
+            => Parse(s.AsSpan(), style, provider);
+
+        /// <inheritdoc/>
+        public static <#= GetName(Dimension, FloatType) #><T> Parse(ReadOnlySpan<char> s, NumberStyles style = NumberStyles.None, IFormatProvider? provider = null)
+            => TryParse(s, style, provider, out var result) ? result : throw new ArgumentException($"Failed to parse {nameof(<#= GetName(Dimension, FloatType) #><T>)}<{typeof(T)}>");
+
+        /// <inheritdoc/>
+        public static <#= GetName(Dimension, FloatType) #><T> Parse(ReadOnlySpan<byte> s, NumberStyles style = NumberStyles.None, IFormatProvider? provider = null)
+            => TryParse(s, style, provider, out var result) ? result : throw new ArgumentException($"Failed to parse {nameof(<#= GetName(Dimension, FloatType) #><T>)}<{typeof(T)}>");
+
+        /// <inheritdoc/>
+        public static bool TryParse(string? s, IFormatProvider? provider, out <#= GetName(Dimension, FloatType) #><T> result)
+            => TryParse(s.AsSpan(), NumberStyles.None, provider, out result);
+
+        /// <inheritdoc/>
+        public static bool TryParse(string? s, NumberStyles style, IFormatProvider? provider, out <#= GetName(Dimension, FloatType) #><T> result)
+            => TryParse(s.AsSpan(), style, provider, out result);
+
+        /// <inheritdoc/>
+        public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out <#= GetName(Dimension, FloatType) #><T> result)
+            => TryParse(s, NumberStyles.None, provider, out result);
+
+        /// <inheritdoc/>
+        public static bool TryParse(ReadOnlySpan<char> s, NumberStyles style, IFormatProvider? provider, out <#= GetName(Dimension, FloatType) #><T> result)
+        {
+            result = default;
+
+            if (s[0] != '(')
+                return false;
+            if (s[^1] != ')')
+                return false;
+
+            string separator = NumberFormatInfo.GetInstance(provider).NumberGroupSeparator;
+
+            s = s[1..^1];
+
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            T <#=GetComponentName(i, false)#>;
+
+                <# if (i < Dimension - 1)
+                    {#>
+            {
+                if (s.Length == 0)
+                    return false;
+
+                int nextNumber = s.IndexOf(separator);
+                if (nextNumber == -1)
+                {
+                    return false;
+                }
+
+                if (!T.TryParse(s[..nextNumber], style, provider, out <#=GetComponentName(i, false)#>))
+                    return false;
+
+                s = s[(nextNumber + separator.Length)..];
+            }
+                    <#
+                        }
+                        else
+                        {#>
+            {
+                if (s.Length == 0)
+                    return false;
+
+                if (!T.TryParse(s, style, provider, out <#=GetComponentName(i, false)#>))
+                    return false;
+            }
+                    <#
+                        }
+                    }#>
+
+            result = new <#= GetName(Dimension, FloatType) #><T>(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#><#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public static bool TryParse(ReadOnlySpan<byte> s, IFormatProvider? provider, out <#= GetName(Dimension, FloatType) #><T> result)
+            => TryParse(s, NumberStyles.None, provider, out result);
+
+        /// <inheritdoc/>
+        public static bool TryParse(ReadOnlySpan<byte> s, NumberStyles style, IFormatProvider? provider, out <#= GetName(Dimension, FloatType) #><T> result)
+        {
+            result = default;
+
+            if (s[0] != '(')
+                return false;
+            if (s[^1] != ')')
+                return false;
+
+            byte[]? separator = Encoding.UTF8.GetBytes(NumberFormatInfo.GetInstance(provider).NumberGroupSeparator);
+
+            s = s[1..^1];
+
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            T <#=GetComponentName(i, false)#>;
+
+                <# if (i < Dimension - 1)
+                    {#>
+            {
+                if (s.Length == 0)
+                    return false;
+
+                int nextNumber = s.IndexOf(separator);
+                if (nextNumber == -1)
+                {
+                    return false;
+                }
+
+                if (!T.TryParse(s[..nextNumber], style, provider, out <#=GetComponentName(i, false)#>))
+                    return false;
+
+                s = s[(nextNumber + separator.Length)..];
+            }
+                    <#
+                        }
+                        else
+                        {#>
+            {
+                if (s.Length == 0)
+                    return false;
+
+                if (!T.TryParse(s, style, provider, out <#=GetComponentName(i, false)#>))
+                    return false;
+            }
+                    <#
+                        }
+                    }#>
+
+            result = new <#= GetName(Dimension, FloatType) #><T>(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#><#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+            return true;
+        }
+        #endregion
+
+        #region Swizzle
+        /// <summary>
+        /// Get the swizzle operators for this vector
+        /// </summary>
+        public SwizzleOperators Swizzle => new (ref Unsafe.AsRef(in this));
+
+        /// <summary>
+        /// A structure that handles swizzle operations for this vector
+        /// </summary>
+        public ref struct SwizzleOperators
+        {
+            private ref <#= GetName(Dimension, FloatType) #><T> _vector;
+
+            /// <summary>
+            /// Creates a Swizzle operator from the given vector
+            /// </summary>
+            /// <param name="vector">the source vector</param>
+            public SwizzleOperators(ref <#= GetName(Dimension, FloatType) #><T> vector)
+            {
+                _vector = ref vector;
+            }
+
+            <#
+                for (int destDim = MinDim; destDim <= MaxDim; destDim++)
+                {
+                    int[] indices = new int[destDim];
+                    while(true)
+                    {#>
+            /// <summary>
+            /// retrieve a <see cref="<#= GetName(destDim, FloatType) #>{T}"/> whose components are (<#=GetSwizzleName(indices, ", ")#>)
+            /// when assigned to components are assigned based on the first matching component
+            /// </summary>
+            public <#= GetName(destDim, FloatType) #><T> <#=GetSwizzleName(indices, "")#>
+            {
+                get => new(_vector.<#=GetSwizzleName(indices, ", _vector.")#>);
+                set
+                {
+                    <#
+                        bool[] found = new bool[Dimension];
+                        for (int i = 0; i < indices.Length; i++)
+                        {
+                            if (found[indices[i]])
+                                continue;
+                            found[indices[i]] = true; #>
+                    _vector.<#=GetComponentName(indices[i])#> = value.<#=GetComponentName(i)#>;
+                    <#
+                        }#>
+                }
+            }
+            <#
+                        int index = 0;
+                        while (++indices[index] == Dimension)
+                        {
+                            indices[index++] = 0;
+
+                            if (index > indices.Length)
+                                break;
+                        }
+                        if (index > indices.Length)
+                                break;
+                    }
+                }#>
+        }
+        #endregion
+
+<#
+    if (FloatType)
+    {#>
+        #region Floating Point Specific
+        /// <summary>
+        /// the length of the vector
+        /// </summary>
+        public T Length => T.Sqrt(LengthSquared);
+
+        /// <summary>
+        /// Gets a vector whose components are all equal to Positive Infinity
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> PositiveInfinity => new(T.PositiveInfinity);
+        /// <summary>
+        /// Gets a vector whose components are all equal to Negative Infinity
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> NegativeInfinity => new(T.NegativeInfinity);
+        /// <summary>
+        /// Gets a vector whose components are all equal to NaN
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> NaN => new(T.NaN);
+        /// <summary>
+        /// Gets a vector whose components are all equal to Epsilon
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> Epsilon => new(T.Epsilon);
+        /// <summary>
+        /// Gets a vector whose components are all equal to Negative Zero
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> NegativeZero => new(T.NegativeZero);
+        /// <summary>
+        /// Gets a vector whose components are all equal to Pi
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> Pi => new(T.Pi);
+        /// <summary>
+        /// Gets a vector whose components are all equal to Tau
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> Tau => new(T.Tau);
+        /// <summary>
+        /// Gets a vector whose components are all equal to E
+        /// </summary>
+        public static <#= GetName(Dimension, FloatType) #><T> E => new(T.E);
+
+        /// <summary>
+        /// Normalizes this vector so that its length is equal to one
+        /// </summary>
+        public void Normalize()
+        {
+            T len = Length;
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            <#=GetComponentName(i)#> /= len;
+            <#
+                }#>
+        }
+
+        /// <summary>
+        /// Returns the normalized version of the given vector
+        /// </summary>
+        /// <param name="vector">the source vector</param>
+        /// <returns>the normalized vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Normalize(<#= GetName(Dimension, FloatType) #><T> vector)
+        {
+            vector.Normalize();
+            return vector;
+        }
+
+        /// <summary>
+        /// Returns a vector whose components are the value of the Sqrt of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Sqrt vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Sqrt(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Sqrt(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Acosh of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Acosh vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Acosh(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Acosh(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Asinh of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Asinh vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Asinh(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Asinh(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Atanh of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Atanh vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Atanh(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Atanh(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Cosh of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Cosh vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Cosh(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Cosh(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Sinh of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Sinh vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Sinh(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Sinh(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Tanh of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Tanh vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Tanh(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Tanh(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Acos of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Acos vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Acos(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Acos(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the AcosPi of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the AcosPi vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> AcosPi(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.AcosPi(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Asin of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Asin vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Asin(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Asin(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the AsinPi of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the AsinPi vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> AsinPi(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.AsinPi(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Atan of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Atan vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Atan(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Atan(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the AtanPi of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the AtanPi vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> AtanPi(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.AtanPi(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Cos of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Cos vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Cos(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Cos(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the CosPi of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the CosPi vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> CosPi(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.CosPi(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Sin of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Sin vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Sin(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Sin(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the SinPi of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the SinPi vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> SinPi(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.SinPi(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Tan of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Tan vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Tan(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Tan(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the TanPi of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the TanPi vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> TanPi(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.TanPi(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the DegreesToRadians of the source vector's components
+        /// </summary>
+        /// <param name="degrees">the source vector</param>
+        /// <returns>the DegreesToRadians vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> DegreesToRadians(<#= GetName(Dimension, FloatType) #><T> degrees) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.DegreesToRadians(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the RadiansToDegrees of the source vector's components
+        /// </summary>
+        /// <param name="radians">the source vector</param>
+        /// <returns>the RadiansToDegrees vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> RadiansToDegrees(<#= GetName(Dimension, FloatType) #><T> radians) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.RadiansToDegrees(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns two vectors whose components are the value of the SinCos of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the SinCos vector</returns>
+        public static (<#= GetName(Dimension, FloatType) #><T>, <#= GetName(Dimension, FloatType) #><T>) SinCos(<#= GetName(Dimension, FloatType) #><T> x)
+        {
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            (T, T) sinCos<#=GetComponentName(i)#> = T.SinCos(x.<#=GetComponentName(i)#>);
+            <#
+                }#>
+            return (new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>sinCos<#=GetComponentName(i)#>.Item1<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>), new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>sinCos<#=GetComponentName(i)#>.Item2<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>));
+        }
+        /// <summary>
+        /// Returns two vectors whose components are the value of the SinCosPi of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the SinCosPi vector</returns>
+        public static (<#= GetName(Dimension, FloatType) #><T>, <#= GetName(Dimension, FloatType) #><T>) SinCosPi(<#= GetName(Dimension, FloatType) #><T> x)
+        {
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            (T, T) sinCos<#=GetComponentName(i)#> = T.SinCosPi(x.<#=GetComponentName(i)#>);
+            <#
+                }#>
+            return (new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>sinCos<#=GetComponentName(i)#>.Item1<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>), new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>sinCos<#=GetComponentName(i)#>.Item2<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>));
+        }
+        /// <summary>
+        /// Returns a vector whose components are the value of the Log of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Log vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Log(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Log(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);T.Log(x.X), T.Log(x.Y));
+        /// <summary>
+        /// Returns a vector whose components are the value of the Log of the source vector's components using the newBase vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="newBase">the newBase vector</param>
+        /// <returns>the Log vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Log(<#= GetName(Dimension, FloatType) #><T> x, <#= GetName(Dimension, FloatType) #><T> newBase) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Log(x.<#=GetComponentName(i)#>, newBase.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Log of the source vector's components using the newBase scalar
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="newBase">the newBase scalar</param>
+        /// <returns>the Log vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Log(<#= GetName(Dimension, FloatType) #><T> x, T newBase) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Log(x.<#=GetComponentName(i)#>, newBase)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);T.Log(x.X, newBase), T.Log(x.Y, newBase));
+        /// <summary>
+        /// Returns a vector whose components are the value of the LogP1 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the LogP1 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> LogP1(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.LogP1(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Log2 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Log2 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Log2(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Log2(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Log2P1 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Log2P1 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Log2P1(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Log2P1(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Log10 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Log10 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Log10(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Log10(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Log10P1 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Log10P1 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Log10P1(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Log10P1(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Exp of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Exp vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Exp(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Exp(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the ExpM1 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the ExpM1 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> ExpM1(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.ExpM1(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Exp2 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Exp2 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Exp2(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Exp2(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Exp2M1 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Exp2M1 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Exp2M1(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Exp2M1(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Exp10 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Exp10 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Exp10(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Exp10(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Exp10M1 of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Exp10M1 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Exp10M1(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Exp10M1(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Pow of the first source vector's components to the power of the second source vector's components
+        /// </summary>
+        /// <param name="x">the first source vector</param>
+        /// <param name="y">the second source vector</param>
+        /// <returns>the Log vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Pow(<#= GetName(Dimension, FloatType) #><T> x, <#= GetName(Dimension, FloatType) #><T> y) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Pow(x.<#=GetComponentName(i)#>, y.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Pow of the first source vector's components to the power of the source scalar
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="y">the source scalar</param>
+        /// <returns>the Log vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Pow(<#= GetName(Dimension, FloatType) #><T> x, T y) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Pow(x.<#=GetComponentName(i)#>, y)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Cbrt of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Cbrt vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Cbrt(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Cbrt(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Hypotenuse of the right triangles created from the two vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Hypot vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Hypot(<#= GetName(Dimension, FloatType) #><T> x, <#= GetName(Dimension, FloatType) #><T> y) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Hypot(x.<#=GetComponentName(i)#>, y.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Hypotenuse of the right triangles created from the vector's component and the scalar value
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="y">the source scalar</param>
+        /// <returns>the Hypot vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Hypot(<#= GetName(Dimension, FloatType) #><T> x, T y) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Hypot(x.<#=GetComponentName(i)#>, y)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the RootN of the source vector's components using the given root
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="n">the root</param>
+        /// <returns>the RootN vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> RootN(<#= GetName(Dimension, FloatType) #><T> x, int n) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.RootN(x.<#=GetComponentName(i)#>, n)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Round of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Round vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Round(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Round(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Round of the source vector's components to the given digits
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="digits">digits to round to</param>
+        /// <returns>the Round vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Round(<#= GetName(Dimension, FloatType) #><T> x, int digits) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Round(x.<#=GetComponentName(i)#>, digits)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Round of the source vector's components using the given mode
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="mode">the rounding mode</param>
+        /// <returns>the Round vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Round(<#= GetName(Dimension, FloatType) #><T> x, MidpointRounding mode) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Round(x.<#=GetComponentName(i)#>, mode)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Round of the source vector's components to the given digits using the given mode
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="digits">digits to round to</param>
+        /// <param name="mode">the rounding mode</param>
+        /// <returns>the Round vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Round(<#= GetName(Dimension, FloatType) #><T> x, int digits, MidpointRounding mode) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Round(x.<#=GetComponentName(i)#>, digits, mode)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Floor of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Floor vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Floor(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Floor(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Ceiling of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Ceiling vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Ceiling(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Ceiling(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Truncate of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Truncate vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Truncate(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Truncate(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Atan2 of the source vector's components using the second source vector's components
+        /// </summary>
+        /// <param name="x">the first source vector</param>
+        /// <param name="y">the second source vector</param>
+        /// <returns>the Atan2 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Atan2(<#= GetName(Dimension, FloatType) #><T> x, <#= GetName(Dimension, FloatType) #><T> y) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Atan2(x.<#=GetComponentName(i)#>, y.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Atan2 of the source vector's components using the source scalar
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="y">the source scalar</param>
+        /// <returns>the Atan2 vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Atan2(<#= GetName(Dimension, FloatType) #><T> x, T y) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Atan2(x.<#=GetComponentName(i)#>, y)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Atan2Pi of the source vector's components using the second source vector's components
+        /// </summary>
+        /// <param name="x">the first source vector</param>
+        /// <param name="y">the second source vector</param>
+        /// <returns>the Atan2Pi vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Atan2Pi(<#= GetName(Dimension, FloatType) #><T> x, <#= GetName(Dimension, FloatType) #><T> y) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Atan2Pi(x.<#=GetComponentName(i)#>, y.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the Atan2Pi of the source vector's components using the source scalar
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="y">the source scalar</param>
+        /// <returns>the Atan2Pi vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> Atan2Pi(<#= GetName(Dimension, FloatType) #><T> x, T y) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Atan2Pi(x.<#=GetComponentName(i)#>, y)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the BitDecrement of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the BitDecrement vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> BitDecrement(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.BitDecrement(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the BitIncrement of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the BitIncrement vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> BitIncrement(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.BitIncrement(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the FusedMultiplyAdd between the source vectors
+        /// </summary>
+        /// <param name="left">the first source vector</param>
+        /// <param name="right">the second source vector</param>
+        /// <param name="addend">the addend source vector</param>
+        /// <returns>the FusedMultiplyAdd vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> FusedMultiplyAdd(<#= GetName(Dimension, FloatType) #><T> left, <#= GetName(Dimension, FloatType) #><T> right, <#= GetName(Dimension, FloatType) #><T> addend) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.FusedMultiplyAdd(left.<#=GetComponentName(i)#>, right.<#=GetComponentName(i)#>, addend.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the FusedMultiplyAdd between the source vectors and the source scalar
+        /// </summary>
+        /// <param name="left">the first source vector</param>
+        /// <param name="right">the second source vector</param>
+        /// <param name="addend">the addend source scalar</param>
+        /// <returns>the FusedMultiplyAdd vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> FusedMultiplyAdd(<#= GetName(Dimension, FloatType) #><T> left, <#= GetName(Dimension, FloatType) #><T> right, T addend) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.FusedMultiplyAdd(left.<#=GetComponentName(i)#>, right.<#=GetComponentName(i)#>, addend)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the FusedMultiplyAdd between the source vectors and the source scalar
+        /// </summary>
+        /// <param name="left">the first source vector</param>
+        /// <param name="right">the second source scalar</param>
+        /// <param name="addend">the addend source vector</param>
+        /// <returns>the FusedMultiplyAdd vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> FusedMultiplyAdd(<#= GetName(Dimension, FloatType) #><T> left, T right, <#= GetName(Dimension, FloatType) #><T> addend) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.FusedMultiplyAdd(left.<#=GetComponentName(i)#>, right, addend.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the FusedMultiplyAdd between the source vectors and the source scalar
+        /// </summary>
+        /// <param name="left">the first source vector</param>
+        /// <param name="right">the second source scalar</param>
+        /// <param name="addend">the addend source scalar</param>
+        /// <returns>the FusedMultiplyAdd vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> FusedMultiplyAdd(<#= GetName(Dimension, FloatType) #><T> left, T right, T addend) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.FusedMultiplyAdd(left.<#=GetComponentName(i)#>, right, addend)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the ReciprocalEstimate of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the ReciprocalEstimate vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> ReciprocalEstimate(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.ReciprocalEstimate(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the ReciprocalSqrtEstimate of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the ReciprocalSqrtEstimate vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> ReciprocalSqrtEstimate(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.ReciprocalSqrtEstimate(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the ILogB of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the ILogB vector</returns>
+        public static <#= GetName(Dimension, false) #><int> ILogB(<#= GetName(Dimension, FloatType) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.ILogB(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the ScaleB of the source vector's components using the second source vector's components
+        /// </summary>
+        /// <param name="x">the first source vector</param>
+        /// <param name="n">the second source vector</param>
+        /// <returns>the ScaleB vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> ScaleB(<#= GetName(Dimension, FloatType) #><T> x, <#= GetName(Dimension, false) #><int> n) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.ScaleB(x.<#=GetComponentName(i)#>, n.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns a vector whose components are the value of the ScaleB of the source vector's components using the second source scalar
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <param name="n">the source scalar</param>
+        /// <returns>the ScaleB vector</returns>
+        public static <#= GetName(Dimension, FloatType) #><T> ScaleB(<#= GetName(Dimension, FloatType) #><T> x, int n) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.ScaleB(x.<#=GetComponentName(i)#>, n)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Reterns a vector whose components are the value of the Round of the source vector's components truncated to an int
+        /// </summary>
+        /// <typeparam name="TOther">the integer type</typeparam>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Round vector</returns>
+        public static <#= GetName(Dimension, false) #><TOther> RoundToInt<TOther>(<#= GetName(Dimension, FloatType) #><T> x) where TOther : unmanaged, IBinaryInteger<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>TOther.CreateTruncating(T.Round(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Reterns a vector whose components are the value of the Floor of the source vector's components truncated to an int
+        /// </summary>
+        /// <typeparam name="TOther">the integer type</typeparam>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Floor vector</returns>
+        public static <#= GetName(Dimension, false) #><TOther> FloorToInt<TOther>(<#= GetName(Dimension, FloatType) #><T> x) where TOther : unmanaged, IBinaryInteger<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>TOther.CreateTruncating(T.Floor(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Reterns a vector whose components are the value of the Ceiling of the source vector's components truncated to an int
+        /// </summary>
+        /// <typeparam name="TOther">the integer type</typeparam>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Ceiling vector</returns>
+        public static <#= GetName(Dimension, false) #><TOther> CeilingToInt<TOther>(<#= GetName(Dimension, FloatType) #><T> x) where TOther : unmanaged, IBinaryInteger<TOther> => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>TOther.CreateTruncating(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        #endregion
+<#
+    }
+    else
+    {#>
+        #region Integer Specific
+        /// <summary>
+        /// Gets a vector whose components are all integers with all bits set
+        /// </summary>
+        public static <#= GetName(Dimension, false) #><T> AllBitsSet => new(T.AllBitsSet);
+
+        /// <summary>
+        /// And the components of the source vectors
+        /// </summary>
+        /// <param name="lh">the first source vector</param>
+        /// <param name="rh">the second source vector</param>
+        /// <returns>the anded vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator &(<#= GetName(Dimension, false) #><T> lh,  <#= GetName(Dimension, false) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> & rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Or the components of the source vectors
+        /// </summary>
+        /// <param name="lh">the first source vector</param>
+        /// <param name="rh">the second source vector</param>
+        /// <returns>the or'd vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator |(<#= GetName(Dimension, false) #><T> lh, <#= GetName(Dimension, false) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> | rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// XOR the components of the source vectors
+        /// </summary>
+        /// <param name="lh">the first source vector</param>
+        /// <param name="rh">the second source vector</param>
+        /// <returns>the xor'd vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator ^(<#= GetName(Dimension, false) #><T> lh, <#= GetName(Dimension, false) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> ^ rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// And the components of the source vector with the source scalar
+        /// </summary>
+        /// <param name="lh">the source vector</param>
+        /// <param name="rh">the source scalar</param>
+        /// <returns>the anded vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator &(<#= GetName(Dimension, false) #><T> lh, T rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> & rh.<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Or the components of the source vector with the source scalar
+        /// </summary>
+        /// <param name="lh">the source vector</param>
+        /// <param name="rh">the source scalar</param>
+        /// <returns>the or'd vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator |(<#= GetName(Dimension, false) #><T> lh, T rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> | rh.<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// XOR the components of the source vector with the source scalar
+        /// </summary>
+        /// <param name="lh">the source vector</param>
+        /// <param name="rh">the source scalar</param>
+        /// <returns>the xor'd vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator ^(<#= GetName(Dimension, false) #><T> lh, T rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh.<#=GetComponentName(i)#> ^ rh.<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// And the components of the source vector with the source scalar
+        /// </summary>
+        /// <param name="lh">the source scalar</param>
+        /// <param name="rh">the source vector</param>
+        /// <returns>the anded vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator &(T lh, <#= GetName(Dimension, false) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh & rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Or the components of the source vector with the source scalar
+        /// </summary>
+        /// <param name="lh">the source scalar</param>
+        /// <param name="rh">the source vector</param>
+        /// <returns>the or'd vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator |(T lh, <#= GetName(Dimension, false) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh | rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// XOR the components of the source vector with the source scalar
+        /// </summary>
+        /// <param name="lh">the source scalar</param>
+        /// <param name="rh">the source vector</param>
+        /// <returns>the xor'd vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator ^(T lh, <#= GetName(Dimension, false) #><T> rh) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>lh ^ rh.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// Not the components of the given vector
+        /// </summary>
+        /// <param name="val">the source vector</param>
+        /// <returns>The not'd vector</returns>
+        public static <#= GetName(Dimension, false) #><T> operator ~(<#= GetName(Dimension, false) #><T> val) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>~val.<#=GetComponentName(i)#><#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+
+        /// <summary>
+        /// Returns a vector whose components are the Log2 value of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the Log2 vector</returns>
+        public static <#= GetName(Dimension, false) #><T> Log2(<#= GetName(Dimension, false) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.Log2(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        /// <summary>
+        /// Returns two vectors whose components are the DivRem value of the two source vectors
+        /// </summary>
+        /// <param name="left">the quotient source vector</param>
+        /// <param name="right">the dividend source vector</param>
+        /// <returns>the DivRem vectors</returns>
+        public static (<#= GetName(Dimension, false) #><T>, <#= GetName(Dimension, false) #><T>) DivRem(<#= GetName(Dimension, false) #><T> left, <#= GetName(Dimension, false) #><T> right)
+        {
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            (T, T) divRem<#=GetComponentName(i)#> = T.DivRem(left.<#=GetComponentName(i)#>, right.<#=GetComponentName(i)#>);
+            <#
+                }#>
+            return (new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>divRem<#=GetComponentName(i)#>.Item1<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>), new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>divRem<#=GetComponentName(i)#>.Item2<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>));
+        }
+
+        /// <summary>
+        /// Returns two vectors whose components are the DivRem value of the source vector and the source scalar
+        /// </summary>
+        /// <param name="left">the quotient source vector</param>
+        /// <param name="right">the dividend source scalar</param>
+        /// <returns>the DivRem vectors</returns>
+        public static (<#= GetName(Dimension, false) #><T>, <#= GetName(Dimension, false) #><T>) DivRem(<#= GetName(Dimension, false) #><T> left, T right)
+        {
+            <#
+                for (int i = 0; i < Dimension; i++)
+                {#>
+            (T, T) divRem<#=GetComponentName(i)#> = T.DivRem(left.<#=GetComponentName(i)#>, right);
+            <#
+                }#>
+            return (new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>divRem<#=GetComponentName(i)#>.Item1<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>), new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>divRem<#=GetComponentName(i)#>.Item2<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>));
+        }
+
+        /// <summary>
+        /// Returns a vector whose components are the PopCount of the source vector's components
+        /// </summary>
+        /// <param name="x">the source vector</param>
+        /// <returns>the PopCount vector</returns>
+        public <#= GetName(Dimension, false) #><T> PopCount(<#= GetName(Dimension, false) #><T> x) => new(<#
+                            for (int i = 0; i < Dimension; i++)
+                            {#>T.PopCount(x.<#=GetComponentName(i)#>)<#= i < Dimension - 1 ? ", " : "" #><#
+                            }#>);
+        #endregion
+<#
+    }#>
+    }
+}
+<#+
+        private string GetName(int dimension, bool floatType)
+        {
+            return "Vector" + dimension + (floatType ? "F" : "I");
+        }
+
+        private string GetComponentName(int dimension, bool Caps = true)
+        {
+            switch (dimension)
+            {
+                default:
+                case 0:
+                    return Caps ? "X" : "x";
+                case 1:
+                    return Caps ? "Y" : "y";
+                case 2:
+                    return Caps ? "Z" : "z";
+                case 3:
+                    return Caps ? "W" : "W";
+                case 4:
+                    return Caps ? "V" : "v";
+                case 5:
+                    return Caps ? "U" : "u";
+            }
+        }
+
+        public string GetSwizzleName(int[] components, string separator)
+        {
+            string st = "";
+            for (int i = 0; i < components.Length; i++)
+            {
+                st += GetComponentName(components[i]) + ((i < components.Length - 1) ? separator : "");
+            }
+            return st;
+        }
+
+        private string ForEachComponent(int dimensions, string prefix, string separator, string postfix, bool Caps = true, int start = 0)
+        {
+            string st = prefix;
+            for (int i = start; i < dimensions; i++)
+            {
+                st += GetComponentName(i, Caps);
+
+                if (i < dimensions - 1)
+                {
+                    st += separator;
+                }
+            }
+            st += postfix;
+        
+        return st;
+        }
+
+        private string ForEachComponent(int dimensions, string prefix, string val, string separator, string postfix, int start = 0)
+        {
+            string st = prefix;
+            for (int i = 0; i < dimensions; i++)
+            {
+                st += val;
+
+                if (i < dimensions - 1)
+                {
+                    st += separator;
+                }
+            }
+            st += postfix;
+        
+        return st;
+        }
+
+        private bool IsPowerOfTwo(int i)
+        {
+            return (i != 0) && ((i & (i - 1)) == 0);
+        }
+
+        private string GetMatrixMultiplication(int matrixRows, int matrixCols, int dimension, bool floatType, string vectorName, string matrixName, bool homogenous)
+        {
+            string ret;
+            string components;
+            if (matrixRows < dimension)
+            {
+                components = "";
+                for (int i = 0; i < matrixRows; i++)
+                    components += GetComponentName(i);
+                ret = "(" + vectorName + ".Swizzle." + components + " * " + matrixName + ")";
+            }
+            else if (matrixRows == dimension)
+            {
+                ret = "(" + vectorName + " * " + matrixName + ")";
+            }
+            else
+            {
+                ret = "(new Vector" + dimension + (floatType ? "F" : "I") + "<T>(";
+                for (int i = 0; i < dimension; i++)
+                    ret += vectorName + "." + GetComponentName(i) + (i < dimension - 1 ? ", " : ") * ");
+                ret += matrixName + ")";
+            }
+
+            if (matrixCols > dimension)
+            {
+                components = "";
+                for (int i = 0; i < dimension; i++)
+                    components += GetComponentName(i);
+                ret += "Swizzle." + components;
+            }
+            else if (matrixCols < dimension)
+            {
+                int diff = dimension - matrixCols;
+                components = "";
+                for (int i = 0; i < diff; i++)
+                    components += (i < diff - 2 || !homogenous ? "T.Zero" : "T.One") + (i < diff - 1 ? ", " : ")");
+                ret = "new Vector" + dimension + (floatType ? "F" : "I") + "<T>(" + ret + components;
+            }
+
+            return ret + ";";
+}#>
