@@ -141,7 +141,7 @@ public class IdentifierRenamingTransformer(IEnumerable<(ISymbol Symbol, string N
 
     // ----- Other -----
 
-    /// <inheritdoc cref="SyntaxNode"/>
+    /// <inheritdoc />
     public override SyntaxNode? VisitVariableDeclarator(VariableDeclaratorSyntax node)
         => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
         .WithLeadingTrivia(node.GetLeadingTrivia())
