@@ -59,67 +59,97 @@ public class IdentifierRenamingTransformer(IEnumerable<(ISymbol Symbol, string N
 
     /// <inheritdoc />
     public override SyntaxNode? VisitIdentifierName(IdentifierNameSyntax node)
-        => IdentifierName(GetNewName(node.Identifier.ValueText));
+        => IdentifierName(GetNewName(node.Identifier.ValueText))
+            .WithLeadingTrivia(node.GetLeadingTrivia())
+            .WithTrailingTrivia(node.GetTrailingTrivia());
 
     // ----- Types -----
 
     /// <inheritdoc />
     public override SyntaxNode? VisitClassDeclaration(ClassDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitStructDeclaration(StructDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitRecordDeclaration(RecordDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitEnumDeclaration(EnumDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     // ----- Members -----
 
     /// <inheritdoc />
     public override SyntaxNode? VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitEventDeclaration(EventDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitPropertyDeclaration(PropertyDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitDestructorDeclaration(DestructorDeclarationSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText)).WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia().Select(VisitTrivia))
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     // ----- Other -----
 
     /// <inheritdoc cref="SyntaxNode"/>
     public override SyntaxNode? VisitVariableDeclarator(VariableDeclaratorSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia())
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 
     /// <inheritdoc />
     public override SyntaxNode? VisitTypeParameter(TypeParameterSyntax node)
-        => node.WithIdentifier(GetNewName(node.Identifier.ValueText));
+        => node.WithIdentifier(GetNewName(node.Identifier.ValueText))
+        .WithLeadingTrivia(node.GetLeadingTrivia())
+        .WithTrailingTrivia(node.GetTrailingTrivia());
 }
