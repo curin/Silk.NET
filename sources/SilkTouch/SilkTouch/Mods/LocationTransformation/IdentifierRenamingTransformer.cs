@@ -42,7 +42,14 @@ public class IdentifierRenamingTransformer(IEnumerable<(ISymbol Symbol, string N
 
     private SyntaxToken GetNewName(string currentName)
     {
-        if (currentName != _context.Symbol.Name)
+        var symbolName = _context.Symbol switch
+        {
+            // Constructor/destructor symbols have a name of .ctor/.dtor, which isn't what we want
+            IMethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } methodSymbol => methodSymbol.ContainingType.Name,
+            _ => _context.Symbol.Name,
+        };
+
+        if (currentName != symbolName)
         {
             return Identifier(currentName);
         }
