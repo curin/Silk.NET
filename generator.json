@@ -41,12 +41,15 @@
       "Mods": [
         "AddIncludes",
         "ClangScraper",
+        "MarkNativeNames",
         "ExtractNestedTyping",
         "TransformHandles",
         "TransformFunctions",
         "TransformProperties",
         "PrettifyNames",
-        "AddVTables"
+        "TransformEnums",
+        "AddVTables",
+        "StripAttributes"
       ],
       "ClangScraper": {
         "ClangSharpResponseFiles": [
@@ -63,6 +66,20 @@
         "BoolTypes": {
           "SDL_bool": null
         }
+      },
+      "PrettifyNames": {
+        "GlobalPrefixHints": ["SDL"]
+      },
+      "TransformEnums": {
+        "AddNoneMemberToFlags": true,
+        "RewriteMemberValues": true
+      },
+      "StripAttributes": {
+        "Remove": [
+          "NativeTypeName",
+          "NameAffix",
+          "Transformed"
+        ]
       }
     },
     "OpenGL": {
@@ -72,13 +89,16 @@
       "Mods": [
         "AddIncludes",
         "ClangScraper",
+        "MarkNativeNames",
         "AddApiProfiles",
         "BakeSourceSets",
         "MixKhronosData",
         "AddOpaqueStructs",
         "TransformFunctions",
         "PrettifyNames",
-        "AddVTables"
+        "TransformEnums",
+        "AddVTables",
+        "StripAttributes"
       ],
       "ClangScraper": {
         "ClangSharpResponseFiles": [
@@ -124,14 +144,16 @@
         ]
       },
       "MixKhronosData": {
-        "UseDataTypeTrimmings": true,
         "SpecPath": "eng/submodules/opengl/xml/gl.xml",
+        "Namespace": "Silk.NET.OpenGL",
         "TypeMap": {
           "TraceMaskMESA": "uint",
           "PathRenderingTokenNV": "byte",
           "PathCoordType": "byte"
         },
-        "Namespace": "Silk.NET.OpenGL"
+        "IdentifyFunctionDataTypes": true,
+        "IdentifyEnumTypeNonExclusiveVendors": true,
+        "IdentifyEnumMemberImpliedVendors": true
       },
       "AddVTables": {
         "VTables": [
@@ -149,16 +171,49 @@
         ]
       },
       "PrettifyNames": {
-        "LongAcronymThreshold": 4,
         "GlobalPrefixHints": ["gl"],
         "PrefixOverrides": {
-          "SyncObjectMask": "GL_SYNC"
+          "SyncObjectMask": "GL_SYNC",
+          "OcclusionQueryParameterNameNV": "GL",
+          "TexStorageAttribs": "GL",
+          "ContainerType": "GL"
+        },
+        "Affixes": {
+          "HandleType": {
+            "Order": 1
+          },
+          "FunctionPointerDelegateType": {
+            "Order": 1
+          },
+          "KhronosVendor": {
+            "Order": -1
+          },
+          "KhronosFunctionDataType": {
+            "IsDiscriminator": true
+          },
+          "KhronosImpliedVendor": {
+            "Remove": true
+          },
+          "KhronosNonExclusiveVendor": {
+            "Remove": true
+          }
         }
+      },
+      "TransformEnums": {
+        "AddNoneMemberToFlags": true,
+        "RewriteMemberValues": true
       },
       "TransformFunctions": {
         "BoolTypes": {
           "GLboolean": null
         }
+      },
+      "StripAttributes": {
+        "Remove": [
+          "NativeTypeName",
+          "NameAffix",
+          "Transformed"
+        ]
       }
     },
     "OpenAL": {
@@ -168,6 +223,7 @@
       "Mods": [
         "AddIncludes",
         "ClangScraper",
+        "MarkNativeNames",
         "ChangeNativeClass",
         "AddApiProfiles",
         "MixKhronosData",
@@ -176,7 +232,9 @@
         "InterceptNativeFunctions",
         "TransformFunctions",
         "PrettifyNames",
-        "AddVTables"
+        "TransformEnums",
+        "AddVTables",
+        "StripAttributes"
       ],
       "ClangScraper": {
         "ClangSharpResponseFiles": [
@@ -192,12 +250,7 @@
         }
       },
       "MixKhronosData": {
-        "UseDataTypeTrimmings": true,
         "SpecPath": "eng/submodules/openal-soft/registry/xml/al.xml",
-        "EnumNativeTypeNames": {
-          "ALenum": "ALEnum",
-          "ALCenum": "ALCEnum"
-        },
         "Namespace": "Silk.NET.OpenAL",
         "NonStandardExtensionNomenclature": true,
         "Vendors": [
@@ -205,9 +258,15 @@
           "LOKI",
           "EXT"
         ],
-        "IgnoreNonVendorSuffixes": [
+        "ExcludeVendorSuffixIdentification": [
+          "ALC_INVALID_CONTEXT"
+        ],
+        "NonVendorSuffixes": [
           "Direct"
-        ]
+        ],
+        "IdentifyFunctionDataTypes": true,
+        "IdentifyEnumTypeNonExclusiveVendors": true,
+        "IdentifyEnumMemberImpliedVendors": true
       },
       "InterceptNativeFunctions": {
         "NativeFunctionNames": [
@@ -231,7 +290,6 @@
         ]
       },
       "PrettifyNames": {
-        "LongAcronymThreshold": 4,
         "GlobalPrefixHints": ["alc", "al"],
         "NameOverrides": {
           "ALContext": "ALContext",
@@ -254,7 +312,31 @@
           "EAXGetDirect": "EAXGetDirect",
           "EAXGetBufferModeDirect": "EAXGetBufferModeDirect",
           "EAXSetBufferModeDirect": "EAXSetBufferModeDirect"
+        },
+        "Affixes": {
+          "HandleType": {
+            "Order": 1
+          },
+          "FunctionPointerDelegateType": {
+            "Order": 1
+          },
+          "KhronosVendor": {
+            "Order": -1
+          },
+          "KhronosFunctionDataType": {
+            "IsDiscriminator": true
+          },
+          "KhronosImpliedVendor": {
+            "Remove": true
+          },
+          "KhronosNonExclusiveVendor": {
+            "Remove": true
+          }
         }
+      },
+      "TransformEnums": {
+        "AddNoneMemberToFlags": true,
+        "RewriteMemberValues": true
       },
       "TransformFunctions": {
         "BoolTypes": {
@@ -266,6 +348,13 @@
       "TransformHandles": {
         "AssumeMissingTypesOpaque": true,
         "UseDSL": true
+      },
+      "StripAttributes": {
+        "Remove": [
+          "NativeTypeName",
+          "NameAffix",
+          "Transformed"
+        ]
       }
     },
     "Vulkan": {
@@ -275,16 +364,18 @@
       "Mods": [
         "AddIncludes",
         "ClangScraper",
-        "AddApiProfiles",
-        "MixKhronosData",
+        "MarkNativeNames",
         "ExtractNestedTyping",
         "TransformHandles",
+        "MixKhronosData",
+        "AddApiProfiles",
         "InterceptNativeFunctions",
         "TransformFunctions",
         "TransformProperties",
         "PrettifyNames",
         "TransformEnums",
-        "AddVTables"
+        "AddVTables",
+        "StripAttributes"
       ],
       "ClangScraper": {
         "ClangSharpResponseFiles": [
@@ -307,7 +398,13 @@
         "FlagsTypes": [
           "VkFlags",
           "VkFlags64"
-        ]
+        ],
+        "ExcludeVendorSuffixIdentification": [
+          "VK_VENDOR_ID_VIV",
+          "VK_VENDOR_ID_VSI",
+          "VK_VENDOR_ID_MESA"
+        ],
+        "IdentifyEnumMemberImpliedVendors": true
       },
       "InterceptNativeFunctions": {
         "NativeFunctionNames": [
@@ -325,10 +422,30 @@
         "UseDSL": true
       },
       "PrettifyNames": {
-        "LongAcronymThreshold": 4,
-        "GlobalPrefixHints": ["vk"],
+        "GlobalPrefixHints": ["PFN_vk","vk"],
         "PrefixOverrides": {
-          "VkPipelineCreateFlags2": "VK_PIPELINE_CREATE_2"
+          "VkPipelineCreateFlags2": "VK_PIPELINE_CREATE_2",
+          "VkMemoryDecompressionMethodFlagsEXT": "VK_MEMORY_DECOMPRESSION_METHOD"
+        },
+        "NameOverrides": {
+          "numAABBs": "NumAabbs"
+        },
+        "Affixes": {
+          "HandleType": {
+            "Order": 1
+          },
+          "FunctionPointerDelegateType": {
+            "Order": 1
+          },
+          "KhronosVendor": {
+            "Order": -1
+          },
+          "KhronosImpliedVendor": {
+            "Remove": true
+          },
+          "KhronosHandleType": {
+            "Remove": true
+          }
         }
       },
       "TransformEnums": {
@@ -359,6 +476,13 @@
             "IsDefault": true,
             "GenerateFactoryPartial": true
           }
+        ]
+      },
+      "StripAttributes": {
+        "Remove": [
+          "NativeTypeName",
+          "NameAffix",
+          "Transformed"
         ]
       }
     }
