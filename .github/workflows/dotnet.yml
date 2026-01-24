@@ -100,7 +100,7 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                 name: coverage-${{ matrix.name }}
-                path: ./coverage/**/coverage.cobertura.xml
+                path: ./coverage/**/*.cobertura.xml
     Report-Coverage:
         name: "Report Coverage"
         runs-on: ubuntu-latest
