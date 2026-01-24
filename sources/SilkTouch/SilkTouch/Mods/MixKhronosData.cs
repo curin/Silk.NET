@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using Silk.NET.SilkTouch.Clang;
 using Silk.NET.SilkTouch.Mods.Metadata;
 using Silk.NET.SilkTouch.Mods.Transformation;
+using Silk.NET.SilkTouch.Naming;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
 namespace Silk.NET.SilkTouch.Mods;
@@ -1891,7 +1892,7 @@ public partial class MixKhronosData(
                 {
                     trimmedName = trimmedName[..^handleSuffix.Length];
                     attributeLists = attributeLists
-                        .AddNameSuffix("KhronosHandleType", handleSuffix, true)
+                        .AddNameAffix(NameAffixType.Suffix, "KhronosHandleType", handleSuffix, true)
                         .WithNativeName(trimmedName);
                 }
             }
@@ -1903,7 +1904,11 @@ public partial class MixKhronosData(
                 {
                     if (trimmedName.EndsWith(vendor))
                     {
-                        attributeLists = attributeLists.AddNameSuffix("KhronosVendor", vendor);
+                        attributeLists = attributeLists.AddNameAffix(
+                            NameAffixType.Suffix,
+                            "KhronosVendor",
+                            vendor
+                        );
                         trimmedName = trimmedName[..^vendor.Length];
 
                         break;
@@ -1921,7 +1926,8 @@ public partial class MixKhronosData(
                 {
                     if (trimmedName.EndsWith(suffix))
                     {
-                        attributeLists = attributeLists.AddNameSuffix(
+                        attributeLists = attributeLists.AddNameAffix(
+                            NameAffixType.Suffix,
                             "KhronosNonVendor",
                             suffix,
                             true
@@ -1943,7 +1949,8 @@ public partial class MixKhronosData(
                         var dataTypeSuffix = trimmedName[match.Index..];
                         trimmedName = trimmedName[..match.Index];
 
-                        attributeLists = attributeLists.AddNameSuffix(
+                        attributeLists = attributeLists.AddNameAffix(
+                            NameAffixType.Suffix,
                             "KhronosFunctionDataType",
                             dataTypeSuffix,
                             true
@@ -1998,7 +2005,11 @@ public partial class MixKhronosData(
             if (groupInfo?.Namespace != null && typeName == $"{groupInfo.Namespace}Enum")
             {
                 node = node.WithAttributeLists(
-                    node.AttributeLists.AddNamePrefix("KhronosNamespaceEnum", groupInfo.Namespace)
+                    node.AttributeLists.AddNameAffix(
+                        NameAffixType.Prefix,
+                        "KhronosNamespaceEnum",
+                        groupInfo.Namespace
+                    )
                 );
             }
 
@@ -2042,7 +2053,12 @@ public partial class MixKhronosData(
             {
                 // Mark the type vendor suffix as identified
                 node = node.WithAttributeLists(
-                    node.AttributeLists.AddNameSuffix(vendorAffixType, typeVendor, true)
+                    node.AttributeLists.AddNameAffix(
+                        NameAffixType.Suffix,
+                        vendorAffixType,
+                        typeVendor,
+                        true
+                    )
                 );
             }
 
@@ -2089,7 +2105,8 @@ public partial class MixKhronosData(
                             {
                                 // Identify for trimming
                                 return member.WithAttributeLists(
-                                    member.AttributeLists.AddNameSuffix(
+                                    member.AttributeLists.AddNameAffix(
+                                        NameAffixType.Suffix,
                                         "KhronosImpliedVendor",
                                         typeVendor,
                                         true
