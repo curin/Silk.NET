@@ -424,6 +424,7 @@ public class MixKhronosDataTests
             .AddDocument(
                 "GLEnum.gen.cs",
                 """
+                [NativeName("GLenum")]
                 public enum GLEnum { }
                 """
             )
@@ -446,15 +447,13 @@ public class MixKhronosDataTests
                     {
                         {
                             "GLEnum",
-                            new MixKhronosData.EnumGroup(
-                                "GLEnum",
-                                "GLEnum",
-                                "Glenum",
-                                [],
-                                false,
-                                null,
-                                "GL"
-                            )
+                            new MixKhronosData.EnumGroup()
+                            {
+                                Name = "GLEnum",
+                                NativeName = "GLenum",
+                                BaseType = "GLenum",
+                                Namespace = "GL",
+                            }
                         },
                     },
                 },
