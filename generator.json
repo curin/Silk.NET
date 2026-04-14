@@ -42,10 +42,12 @@
         "AddIncludes",
         "ClangScraper",
         "MarkNativeNames",
+        "ExtractHandles",
         "ExtractNestedTyping",
         "TransformHandles",
         "TransformFunctions",
         "TransformProperties",
+        "IdentifySharedPrefixes",
         "PrettifyNames",
         "TransformEnums",
         "AddVTables",
@@ -59,16 +61,22 @@
         "InputTestRoot": "tests/SDL"
       },
       "TransformHandles": {
-        "AssumeMissingTypesOpaque": true,
-        "UseDSL": true
+        "UseDsl": true
       },
       "TransformFunctions": {
         "BoolTypes": {
           "SDL_bool": null
         }
       },
-      "PrettifyNames": {
+      "IdentifySharedPrefixes": {
         "GlobalPrefixHints": ["SDL"]
+      },
+      "PrettifyNames": {
+        "Affixes": {
+          "SharedPrefix": {
+            "Remove": true
+          }
+        }
       },
       "TransformEnums": {
         "AddNoneMemberToFlags": true,
@@ -95,6 +103,7 @@
         "MixKhronosData",
         "AddOpaqueStructs",
         "TransformFunctions",
+        "IdentifySharedPrefixes",
         "PrettifyNames",
         "TransformEnums",
         "AddVTables",
@@ -171,14 +180,17 @@
           }
         ]
       },
-      "PrettifyNames": {
+      "IdentifySharedPrefixes": {
         "GlobalPrefixHints": ["gl"],
         "PrefixOverrides": {
           "SyncObjectMask": "GL_SYNC",
           "OcclusionQueryParameterNameNV": "GL",
           "TexStorageAttribs": "GL",
-          "ContainerType": "GL"
-        },
+          "ContainerType": "GL",
+          "SeparableTargetEXT": "GL"
+        }
+      },
+      "PrettifyNames": {
         "Affixes": {
           "HandleType": {
             "Order": 1
@@ -196,6 +208,9 @@
             "Remove": true
           },
           "KhronosNonExclusiveVendor": {
+            "Remove": true
+          },
+          "SharedPrefix": {
             "Remove": true
           }
         }
@@ -228,10 +243,12 @@
         "ChangeNativeClass",
         "AddApiProfiles",
         "MixKhronosData",
+        "ExtractHandles",
         "ExtractNestedTyping",
         "TransformHandles",
         "InterceptNativeFunctions",
         "TransformFunctions",
+        "IdentifySharedPrefixes",
         "PrettifyNames",
         "TransformEnums",
         "AddVTables",
@@ -294,25 +311,20 @@
           }
         ]
       },
+      "IdentifySharedPrefixes": {
+        "GlobalPrefixHints": ["alc", "al"]
+      },
       "PrettifyNames": {
-        "GlobalPrefixHints": ["alc", "al"],
         "NameOverrides": {
           "ALContext": "ALContext",
           "EFXEAXREVERBPROPERTIES": "EfxEaxReverbProperties",
-          "EFXEAXREVERBPROPERTIES_flReflectionsPan": "EfxEaxReverbPropertiesFlReflectionsPan",
-          "EFXEAXREVERBPROPERTIES_flLateReverbPan": "EfxEaxReverbPropertiesFlLateReverbPan",
           "ALCcontextHandle": "ContextHandle",
           "ALCdeviceHandle": "DeviceHandle",
           "ALBUFFERCALLBACKTYPESOFT": "BufferCallbackSOFT",
-          "ALBUFFERCALLBACKTYPESOFTDelegate": "BufferCallbackDelegateSOFT",
           "ALCEVENTPROCTYPESOFT": "ContextEventProcSOFT",
-          "ALCEVENTPROCTYPESOFTDelegate": "ContextEventProcDelegateSOFT",
           "ALEVENTPROCSOFT": "EventProcSOFT",
-          "ALEVENTPROCSOFTDelegate": "EventProcDelegateSOFT",
           "ALDEBUGPROCEXT": "DebugProcEXT",
-          "ALDEBUGPROCEXTDelegate": "DebugProcDelegateEXT",
-          "LPALFOLDBACKCALLBACK": "FoldbackCallback",
-          "LPALFOLDBACKCALLBACKDelegate": "FoldbackCallbackDelegate"
+          "LPALFOLDBACKCALLBACK": "FoldbackCallback"
         },
         "Affixes": {
           "HandleType": {
@@ -332,6 +344,9 @@
           },
           "KhronosNonExclusiveVendor": {
             "Remove": true
+          },
+          "SharedPrefix": {
+            "Remove": true
           }
         }
       },
@@ -347,8 +362,7 @@
         "BenefitOfTheDoubtArrayTransformation": true
       },
       "TransformHandles": {
-        "AssumeMissingTypesOpaque": true,
-        "UseDSL": true
+        "UseDsl": true
       },
       "StripAttributes": {
         "Remove": [
@@ -366,6 +380,7 @@
         "AddIncludes",
         "ClangScraper",
         "MarkNativeNames",
+        "ExtractHandles",
         "ExtractNestedTyping",
         "TransformHandles",
         "MixKhronosData",
@@ -373,6 +388,7 @@
         "InterceptNativeFunctions",
         "TransformFunctions",
         "TransformProperties",
+        "IdentifySharedPrefixes",
         "PrettifyNames",
         "TransformEnums",
         "AddVTables",
@@ -419,15 +435,16 @@
         }
       },
       "TransformHandles": {
-        "AssumeMissingTypesOpaque": true,
-        "UseDSL": true
+        "UseDsl": true
       },
-      "PrettifyNames": {
-        "GlobalPrefixHints": ["PFN_vk","vk"],
+      "IdentifySharedPrefixes": {
+        "GlobalPrefixHints": ["PFN_vk", "vk"],
         "PrefixOverrides": {
           "VkPipelineCreateFlags2": "VK_PIPELINE_CREATE_2",
           "VkMemoryDecompressionMethodFlagsEXT": "VK_MEMORY_DECOMPRESSION_METHOD"
-        },
+        }
+      },
+      "PrettifyNames": {
         "NameOverrides": {
           "numAABBs": "NumAabbs"
         },
@@ -445,6 +462,9 @@
             "Remove": true
           },
           "KhronosHandleType": {
+            "Remove": true
+          },
+          "SharedPrefix": {
             "Remove": true
           }
         }

@@ -11,13 +11,19 @@ namespace Silk.NET.SilkTouch.Naming;
 public static class NameSplitter
 {
     /// <summary>
+    /// Splits the given C# identifier into separate words and rejoins them using an underscore as a separator.
+    /// </summary>
+    public static string Underscore(string identifier) =>
+        string.Join("_", SplitIntoWords(identifier));
+
+    /// <summary>
     /// Splits the given C# identifier into separate words.
     /// </summary>
     /// <remarks>
     /// See the test cases for this method to see examples on how this method behaves.
     /// </remarks>
     /// <param name="identifier">A string that contains only valid C# identifier characters.</param>
-    public static List<string> BreakIntoWords(string identifier)
+    public static List<string> SplitIntoWords(string identifier)
     {
         var words = new List<string>();
         var currentWord = new StringBuilder();

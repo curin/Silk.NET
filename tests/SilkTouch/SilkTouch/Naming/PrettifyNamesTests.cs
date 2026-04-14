@@ -4,7 +4,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging.Abstractions;
 using Silk.NET.SilkTouch.Mods;
-using Silk.NET.SilkTouch.Naming;
 
 namespace Silk.NET.SilkTouch.UnitTests.Naming;
 
@@ -19,381 +18,6 @@ public class PrettifyNamesTests
     }
 
     [Test]
-    public async Task TrimsSharedPrefix()
-    {
-        var project = TestUtils
-            .CreateTestProject()
-            .AddDocument(
-                "OcclusionQueryParameterNameNV.gen.cs",
-                """
-                public enum OcclusionQueryParameterNameNV
-                {
-                    GL_PIXEL_COUNT_NV = 34918,
-                    GL_PIXEL_COUNT_AVAILABLE_NV = 34919,
-                }
-                """
-            )
-            .Project;
-
-        var context = new DummyModContext() { SourceProject = project };
-
-        var prettifyNames = new PrettifyNames(
-            NullLogger<PrettifyNames>.Instance,
-            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration()),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-        );
-
-        await prettifyNames.ExecuteAsync(context);
-
-        // The prefix shared by the member names should be trimmed
-        // The type name should not be modified
-        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-        await Verify(result!.NormalizeWhitespace().ToString());
-    }
-
-    [Test]
-    public async Task TrimsSharedPrefix2()
-    {
-        var project = TestUtils
-            .CreateTestProject()
-            .AddDocument(
-                "VocalMorpherPhoneme.gen.cs",
-                """
-                public enum VocalMorpherPhoneme
-                {
-                    AL_VOCAL_MORPHER_PHONEME_A = 0,
-                    AL_VOCAL_MORPHER_PHONEME_E = 1,
-                    AL_VOCAL_MORPHER_PHONEME_I = 2,
-                }
-                """
-            )
-            .Project;
-
-        var context = new DummyModContext() { SourceProject = project };
-
-        var prettifyNames = new PrettifyNames(
-            NullLogger<PrettifyNames>.Instance,
-            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration()),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-        );
-
-        await prettifyNames.ExecuteAsync(context);
-
-        // The prefix shared by the member names should be trimmed
-        // The type name should not be modified
-        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-        await Verify(result!.NormalizeWhitespace().ToString());
-    }
-
-    [Test]
-    public async Task TrimsSharedPrefix_ForTypes()
-    {
-        var project = TestUtils
-            .CreateTestProject()
-            .AddDocument(
-                "Vk.gen.cs",
-                """
-                public enum VkPresentModeKHR { }
-                public enum VkPresentIdKHR { }
-                """
-            )
-            .Project;
-
-        var context = new DummyModContext() { SourceProject = project };
-
-        var prettifyNames = new PrettifyNames(
-            NullLogger<PrettifyNames>.Instance,
-            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration()),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-        );
-
-        await prettifyNames.ExecuteAsync(context);
-
-        // The type names should be trimmed as ModeKHR and IdKHR
-        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-        await Verify(result!.NormalizeWhitespace().ToString());
-    }
-
-    [Test]
-    public async Task TrimsSharedPrefix_WhenAffixesDeclared()
-    {
-        var project = TestUtils
-            .CreateTestProject()
-            .AddDocument(
-                "OcclusionQueryParameterNameNV.gen.cs",
-                """
-                public enum OcclusionQueryParameterNameNV
-                {
-                    [NameAffix("Suffix", "KhronosVendor", "NV")]
-                    GL_PIXEL_COUNT_NV = 34918,
-
-                    [NameAffix("Suffix", "KhronosVendor", "NV")]
-                    GL_PIXEL_COUNT_AVAILABLE_NV = 34919,
-                }
-                """
-            )
-            .Project;
-
-        var context = new DummyModContext() { SourceProject = project };
-
-        var prettifyNames = new PrettifyNames(
-            NullLogger<PrettifyNames>.Instance,
-            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration()),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-        );
-
-        await prettifyNames.ExecuteAsync(context);
-
-        // The declaration of the 2 NV member suffixes should make PrettifyNames trim less of the member name
-        // This is because NameTrimmer only sees the name without the suffixes
-        // The type name should remain unchanged except for the removal of the NV suffix
-        //
-        // Note: When this test was first added, the names were not being trimmed at all.
-        // The fix was to ensure NameTrimmer.GetTrimmingName trimmed the trailing underscore.
-        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-        await Verify(result!.NormalizeWhitespace().ToString());
-    }
-
-    [Test]
-    public async Task HintShouldNotAffectSharedPrefixTrimming()
-    {
-        string result1;
-        string result2;
-
-        {
-            var project = TestUtils
-                .CreateTestProject()
-                .AddDocument(
-                    "OcclusionQueryParameterNameNV.gen.cs",
-                    """
-                    public enum OcclusionQueryParameterNameNV
-                    {
-                        GL_PIXEL_COUNT_NV = 34918,
-                        GL_PIXEL_COUNT_AVAILABLE_NV = 34919,
-                    }
-                    """
-                )
-                .Project;
-
-            var context = new DummyModContext() { SourceProject = project };
-
-            var prettifyNames = new PrettifyNames(
-                NullLogger<PrettifyNames>.Instance,
-                new DummyOptions<PrettifyNames.Configuration>(
-                    new PrettifyNames.Configuration() { GlobalPrefixHints = ["gl"] }
-                ),
-                [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-            );
-
-            await prettifyNames.ExecuteAsync(context);
-
-            var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-            result1 = result!.NormalizeWhitespace().ToString();
-        }
-
-        {
-            var project = TestUtils
-                .CreateTestProject()
-                .AddDocument(
-                    "OcclusionQueryParameterNameNV.gen.cs",
-                    """
-                    public enum OcclusionQueryParameterNameNV
-                    {
-                        GL_PIXEL_COUNT_NV = 34918,
-                        GL_PIXEL_COUNT_AVAILABLE_NV = 34919,
-                    }
-                    """
-                )
-                .Project;
-
-            var context = new DummyModContext() { SourceProject = project };
-
-            var prettifyNames = new PrettifyNames(
-                NullLogger<PrettifyNames>.Instance,
-                new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration()),
-                [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-            );
-
-            await prettifyNames.ExecuteAsync(context);
-
-            var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-            result2 = result!.NormalizeWhitespace().ToString();
-        }
-
-        // The two results should match because member names share prefixes in both cases, regardless of what the hint is
-        // The NameAffix attributes are also required to cause the regression back when this test was first added
-        Assert.That(result1, Is.EqualTo(result2));
-    }
-
-    [Test]
-    public async Task HintShouldNotAffectSharedPrefixTrimming_WhenAffixesDeclared()
-    {
-        string result1;
-        string result2;
-
-        {
-            var project = TestUtils
-                .CreateTestProject()
-                .AddDocument(
-                    "OcclusionQueryParameterNameNV.gen.cs",
-                    """
-                    public enum OcclusionQueryParameterNameNV
-                    {
-                        [NameAffix("Suffix", "KhronosVendor", "NV")]
-                        GL_PIXEL_COUNT_NV = 34918,
-
-                        [NameAffix("Suffix", "KhronosVendor", "NV")]
-                        GL_PIXEL_COUNT_AVAILABLE_NV = 34919,
-                    }
-                    """
-                )
-                .Project;
-
-            var context = new DummyModContext() { SourceProject = project };
-
-            var prettifyNames = new PrettifyNames(
-                NullLogger<PrettifyNames>.Instance,
-                new DummyOptions<PrettifyNames.Configuration>(
-                    new PrettifyNames.Configuration() { GlobalPrefixHints = ["gl"] }
-                ),
-                [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-            );
-
-            await prettifyNames.ExecuteAsync(context);
-
-            var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-            result1 = result!.NormalizeWhitespace().ToString();
-        }
-
-        {
-            var project = TestUtils
-                .CreateTestProject()
-                .AddDocument(
-                    "OcclusionQueryParameterNameNV.gen.cs",
-                    """
-                    public enum OcclusionQueryParameterNameNV
-                    {
-                        [NameAffix("Suffix", "KhronosVendor", "NV")]
-                        GL_PIXEL_COUNT_NV = 34918,
-
-                        [NameAffix("Suffix", "KhronosVendor", "NV")]
-                        GL_PIXEL_COUNT_AVAILABLE_NV = 34919,
-                    }
-                    """
-                )
-                .Project;
-
-            var context = new DummyModContext() { SourceProject = project };
-
-            var prettifyNames = new PrettifyNames(
-                NullLogger<PrettifyNames>.Instance,
-                new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration()),
-                [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-            );
-
-            await prettifyNames.ExecuteAsync(context);
-
-            var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-            result2 = result!.NormalizeWhitespace().ToString();
-        }
-
-        // The two results should match because member names share prefixes in both cases, regardless of what the hint is
-        // The NameAffix attributes are also required to cause the regression back when this test was first added
-        Assert.That(result1, Is.EqualTo(result2));
-    }
-
-    [Test]
-    public async Task TrimsSharedPrefix_WhenAffixesDeclared_AndNamesWithoutAffixesConflict()
-    {
-        var project = TestUtils
-            .CreateTestProject()
-            .AddDocument(
-                "VkPresentModeKHR.gen.cs",
-                """
-                [NameAffix("Suffix", "KhronosVendor", "KHR")]
-                public enum VkPresentModeKHR
-                {
-                    [NameAffix("Suffix", "KhronosVendor", "KHR")]
-                    VK_PRESENT_MODE_FIFO_LATEST_READY_KHR = 1000361000,
-
-                    [NameAffix("Suffix", "KhronosVendor", "EXT")]
-                    VK_PRESENT_MODE_FIFO_LATEST_READY_EXT = VK_PRESENT_MODE_FIFO_LATEST_READY_KHR,
-                }
-                """
-            )
-            .Project;
-
-        var context = new DummyModContext() { SourceProject = project };
-
-        var prettifyNames = new PrettifyNames(
-            NullLogger<PrettifyNames>.Instance,
-            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration()),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-        );
-
-        await prettifyNames.ExecuteAsync(context);
-
-        // This test should run without erroring
-        // This is to catch a regression where NameTrimmer would error
-        // since the names with the affixes removed would conflict
-        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-        await Verify(result!.NormalizeWhitespace().ToString());
-    }
-
-    [Test]
-    public async Task TrimsPrefix_WhenMatchingHint()
-    {
-        var project = TestUtils
-            .CreateTestProject()
-            .AddDocument("VkPresentModeKHR.gen.cs", "public enum VkPresentModeKHR { }")
-            .Project;
-
-        var context = new DummyModContext() { SourceProject = project };
-
-        var prettifyNames = new PrettifyNames(
-            NullLogger<PrettifyNames>.Instance,
-            new DummyOptions<PrettifyNames.Configuration>(
-                new PrettifyNames.Configuration() { GlobalPrefixHints = ["vk"] }
-            ),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-        );
-
-        await prettifyNames.ExecuteAsync(context);
-
-        // The type name should be trimmed as PresentModeKHR
-        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-        await Verify(result!.NormalizeWhitespace().ToString());
-    }
-
-    [Test]
-    public async Task DoesNotTrimTypeName_WhenNotMatchingHint_AndOnlyOneType()
-    {
-        var project = TestUtils
-            .CreateTestProject()
-            .AddDocument(
-                "OcclusionQueryParameterNameNV.gen.cs",
-                "public enum OcclusionQueryParameterNameNV { }"
-            )
-            .Project;
-
-        var context = new DummyModContext() { SourceProject = project };
-
-        var prettifyNames = new PrettifyNames(
-            NullLogger<PrettifyNames>.Instance,
-            new DummyOptions<PrettifyNames.Configuration>(
-                new PrettifyNames.Configuration() { GlobalPrefixHints = ["gl"] }
-            ),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
-        );
-
-        await prettifyNames.ExecuteAsync(context);
-
-        // The type name should remain as OcclusionQueryParameterNameNV
-        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
-        await Verify(result!.NormalizeWhitespace().ToString());
-    }
-
-    [Test]
     public async Task Regression_UnexpectedCasingChangesInFormatEnums()
     {
         var project = TestUtils
@@ -403,9 +27,11 @@ public class PrettifyNamesTests
                 """
                 public enum InternalFormat
                 {
+                    [NameAffix("Prefix", "SharedPrefix", "GL")]
                     [NameAffix("Suffix", "KhronosVendor", "ARB")]
                     GL_RGBA32F_ARB = 34836,
 
+                    [NameAffix("Prefix", "SharedPrefix", "GL")]
                     [NameAffix("Suffix", "KhronosVendor", "ARB")]
                     GL_RGB32F_ARB = 34837,
                 }
@@ -418,9 +44,18 @@ public class PrettifyNamesTests
         var prettifyNames = new PrettifyNames(
             NullLogger<PrettifyNames>.Instance,
             new DummyOptions<PrettifyNames.Configuration>(
-                new PrettifyNames.Configuration() { LongAcronymThreshold = 3 }
-            ),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
+                new PrettifyNames.Configuration()
+                {
+                    LongAcronymThreshold = 3,
+                    Affixes =
+                    {
+                        {
+                            "SharedPrefix",
+                            new PrettifyNames.NameAffixConfiguration() { Remove = true }
+                        },
+                    },
+                }
+            )
         );
 
         await prettifyNames.ExecuteAsync(context);
@@ -445,18 +80,22 @@ public class PrettifyNamesTests
                 """
                 public enum GLEnum
                 {
+                    [NameAffix("Prefix", "SharedPrefix", "GL")]
                     [NameAffix("Suffix", "KhronosVendor", "EXT")]
                     GL_RGB16_EXT = 32852,
 
+                    [NameAffix("Prefix", "SharedPrefix", "GL")]
                     [NameAffix("Suffix", "KhronosVendor", "EXT")]
                     GL_RGB16F_EXT = 34843,
                 }
 
                 public enum ALEnum
                 {
+                    [NameAffix("Prefix", "SharedPrefix", "AL")]
                     [NameAffix("Suffix", "KhronosVendor", "SOFT")]
                     AL_MONO16_SOFT = 4353,
 
+                    [NameAffix("Prefix", "SharedPrefix", "AL")]
                     [NameAffix("Suffix", "KhronosVendor", "SOFT")]
                     AL_MONO32F_SOFT = 65552,
                 }
@@ -469,9 +108,18 @@ public class PrettifyNamesTests
         var prettifyNames = new PrettifyNames(
             NullLogger<PrettifyNames>.Instance,
             new DummyOptions<PrettifyNames.Configuration>(
-                new PrettifyNames.Configuration() { LongAcronymThreshold = 4 }
-            ),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
+                new PrettifyNames.Configuration()
+                {
+                    LongAcronymThreshold = 4,
+                    Affixes =
+                    {
+                        {
+                            "SharedPrefix",
+                            new PrettifyNames.NameAffixConfiguration() { Remove = true }
+                        },
+                    },
+                }
+            )
         );
 
         await prettifyNames.ExecuteAsync(context);
@@ -486,7 +134,7 @@ public class PrettifyNamesTests
     }
 
     [Test]
-    public async Task Regression_IncorrectSecondary_ChosenAsFallback()
+    public async Task FallbackIsChosenCorrectly()
     {
         var project = TestUtils
             .CreateTestProject()
@@ -495,18 +143,16 @@ public class PrettifyNamesTests
                 """
                 public class AL
                 {
+                    [NameAffix("Prefix", "SharedPrefix", "al")]
                     [NameAffix("Suffix", "KhronosNonVendorSuffix", "Direct")]
                     [NameAffix("Suffix", "KhronosVendor", "SOFT")]
                     public void alGetBufferPtrDirectSOFT() { }
 
+                    [NameAffix("Prefix", "SharedPrefix", "al")]
                     [NameAffix("Suffix", "KhronosFunctionDataType", "v")]
                     [NameAffix("Suffix", "KhronosNonVendorSuffix", "Direct")]
                     [NameAffix("Suffix", "KhronosVendor", "SOFT")]
                     public void alGetBufferPtrvDirectSOFT() { }
-
-                    // This is to ensure that prefix identification doesn't trim too much
-                    [NameAffix("Suffix", "KhronosFunctionDataType", "i")]
-                    public void alFilteri() { }
                 }
                 """
             )
@@ -520,38 +166,63 @@ public class PrettifyNamesTests
                 new PrettifyNames.Configuration()
                 {
                     LongAcronymThreshold = 4,
-                    GlobalPrefixHints = ["al"],
                     Affixes =
                     {
                         {
+                            "SharedPrefix",
+                            new PrettifyNames.NameAffixConfiguration()
+                            {
+                                DiscriminatorPriority = 0,
+                                IsDiscriminator = true,
+                            }
+                        },
+                        {
                             "KhronosFunctionDataType",
-                            new PrettifyNames.NameAffixConfiguration() { IsDiscriminator = true }
+                            new PrettifyNames.NameAffixConfiguration()
+                            {
+                                DiscriminatorPriority = 1,
+                                IsDiscriminator = true,
+                            }
                         },
                     },
                 }
-            ),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
+            )
         );
 
         await prettifyNames.ExecuteAsync(context);
 
         // This is to catch a regression where choosing the shortest secondary available is not always correct
-        // The second method (with the -v suffix) should not have the global prefix restored
+        // The second method (with the -v suffix) should not have the shared prefix restored
         // Eg: We don't want AlGetBufferPtr
+        //
+        // The expected output is:
+        // GetBufferPtrDirectSOFT
+        // GetBufferPtrvDirectSOFT
         var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
         await Verify(result!.NormalizeWhitespace().ToString());
     }
 
     [Test]
-    public async Task PreserveKhronosNamespaceEnumPrefix()
+    public async Task FallbackIsChosenCorrectly_ReversedPriority()
     {
         var project = TestUtils
             .CreateTestProject()
             .AddDocument(
-                "GLEnum.gen.cs",
+                "AL.gen.cs",
                 """
-                [NameAffix("Prefix", "KhronosNamespaceEnum", "GL")]
-                public enum GLEnum { }
+                public class AL
+                {
+                    [NameAffix("Prefix", "SharedPrefix", "al")]
+                    [NameAffix("Suffix", "KhronosNonVendorSuffix", "Direct")]
+                    [NameAffix("Suffix", "KhronosVendor", "SOFT")]
+                    public void alGetBufferPtrDirectSOFT() { }
+
+                    [NameAffix("Prefix", "SharedPrefix", "al")]
+                    [NameAffix("Suffix", "KhronosFunctionDataType", "v")]
+                    [NameAffix("Suffix", "KhronosNonVendorSuffix", "Direct")]
+                    [NameAffix("Suffix", "KhronosVendor", "SOFT")]
+                    public void alGetBufferPtrvDirectSOFT() { }
+                }
                 """
             )
             .Project;
@@ -561,14 +232,255 @@ public class PrettifyNamesTests
         var prettifyNames = new PrettifyNames(
             NullLogger<PrettifyNames>.Instance,
             new DummyOptions<PrettifyNames.Configuration>(
-                new PrettifyNames.Configuration() { GlobalPrefixHints = ["gl"] }
-            ),
-            [new DummyJobDependency<INameTrimmer>([new NameTrimmer()])]
+                new PrettifyNames.Configuration()
+                {
+                    LongAcronymThreshold = 4,
+                    Affixes =
+                    {
+                        {
+                            "SharedPrefix",
+                            new PrettifyNames.NameAffixConfiguration()
+                            {
+                                DiscriminatorPriority = 1,
+                                IsDiscriminator = true,
+                            }
+                        },
+                        {
+                            "KhronosFunctionDataType",
+                            new PrettifyNames.NameAffixConfiguration()
+                            {
+                                DiscriminatorPriority = 0,
+                                IsDiscriminator = true,
+                            }
+                        },
+                    },
+                }
+            )
         );
 
         await prettifyNames.ExecuteAsync(context);
 
-        // The presence of the NameAffix attribute should prevent the GL- prefix of GLEnum from being removed
+        // This ensures that the config is respected
+        //
+        // The expected output is:
+        // GetBufferPtrDirectSOFT
+        // alGetBufferPtrDirectSOFT (affixes are not prettified by default)
+        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
+        await Verify(result!.NormalizeWhitespace().ToString());
+    }
+
+    [Test]
+    public async Task SuccessfullyUsesReferencedAffixes()
+    {
+        var project = TestUtils
+            .CreateTestProject()
+            .AddDocument(
+                "SDL.gen.cs",
+                """
+                [NameAffix("Suffix", "Test", "ShouldBeInOutputName")]
+                public struct GamepadBinding { }
+
+                [NameAffix("Prefix", "NestedStructParent", nameof(GamepadBinding))]
+                public struct GamepadBindingInput { }
+
+                [NameAffix("Prefix", "NestedStructParent", nameof(GamepadBindingInput))]
+                public struct GamepadBindingInputAxis { }
+                """
+            )
+            .Project;
+
+        var context = new DummyModContext() { SourceProject = project };
+
+        var prettifyNames = new PrettifyNames(
+            NullLogger<PrettifyNames>.Instance,
+            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration())
+        );
+
+        await prettifyNames.ExecuteAsync(context);
+
+        // All names should start with GamepadBindingShouldBeInOutputName
+        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
+        await Verify(result!.NormalizeWhitespace().ToString());
+    }
+
+    [Test]
+    public async Task SuccessfullyUsesReferencedAffixes_FromParentScope()
+    {
+        // Note that at time of writing, no nested scopes are supported
+        // This means that the only valid scope is the global scope
+        var project = TestUtils
+            .CreateTestProject()
+            .AddDocument(
+                "Test.gen.cs",
+                """
+                [NameAffix("Suffix", "Test", "Suffix")]
+                public struct A
+                {
+                    [NameAffix("Suffix", "Test", nameof(A))]
+                    public static int B;
+                }
+                """
+            )
+            .Project;
+
+        var context = new DummyModContext() { SourceProject = project };
+
+        var prettifyNames = new PrettifyNames(
+            NullLogger<PrettifyNames>.Instance,
+            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration())
+        );
+
+        await prettifyNames.ExecuteAsync(context);
+
+        // A should become ASuffix
+        // B should become BASuffix
+        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
+        await Verify(result!.NormalizeWhitespace().ToString());
+    }
+
+    [Test]
+    public async Task SuccessfullyUsesReferencedAffixes_WhenOverridden()
+    {
+        var project = TestUtils
+            .CreateTestProject()
+            .AddDocument(
+                "AL.gen.cs",
+                """
+                public struct ALBUFFERCALLBACKTYPESOFT;
+
+                [NameAffix("Prefix", "FunctionPointerParent", nameof(ALBUFFERCALLBACKTYPESOFT))]
+                [NameAffix("Suffix", "FunctionPointerDelegateType", "Delegate")]
+                public delegate int ALBUFFERCALLBACKTYPESOFTDelegate();
+                """
+            )
+            .Project;
+
+        var context = new DummyModContext() { SourceProject = project };
+
+        var prettifyNames = new PrettifyNames(
+            NullLogger<PrettifyNames>.Instance,
+            new DummyOptions<PrettifyNames.Configuration>(
+                new PrettifyNames.Configuration()
+                {
+                    NameOverrides = { { "ALBUFFERCALLBACKTYPESOFT", "BufferCallbackSOFT" } },
+                }
+            )
+        );
+
+        await prettifyNames.ExecuteAsync(context);
+
+        // Both names should be affected by the override
+        var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
+        await Verify(result!.NormalizeWhitespace().ToString());
+    }
+
+    [Test]
+    public void CycleInReferencedAffixes_Throws()
+    {
+        var project = TestUtils
+            .CreateTestProject()
+            .AddDocument(
+                "Test.gen.cs",
+                """
+                [NameAffix("Suffix", "Test", nameof(B))]
+                public struct A { }
+
+                [NameAffix("Suffix", "Test", nameof(A))]
+                public struct B { }
+                """
+            )
+            .Project;
+
+        var context = new DummyModContext() { SourceProject = project };
+
+        var prettifyNames = new PrettifyNames(
+            NullLogger<PrettifyNames>.Instance,
+            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration())
+        );
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await prettifyNames.ExecuteAsync(context);
+        });
+    }
+
+    [Test]
+    public void MissingReferencedAffix_Throws()
+    {
+        var project = TestUtils
+            .CreateTestProject()
+            .AddDocument(
+                "Test.gen.cs",
+                """
+                [NameAffix("Suffix", "Test", nameof(B))]
+                public struct A { }
+                """
+            )
+            .Project;
+
+        var context = new DummyModContext() { SourceProject = project };
+
+        var prettifyNames = new PrettifyNames(
+            NullLogger<PrettifyNames>.Instance,
+            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration())
+        );
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await prettifyNames.ExecuteAsync(context);
+        });
+    }
+
+    [Test]
+    public async Task ConflictsAreResolved_ForMethodsAndConstants()
+    {
+        // This test focuses on an edge case where method conflicts might be resolved while
+        // ignoring the fact that a constant also wants to have the same output name
+        var project = TestUtils
+            .CreateTestProject()
+            .AddDocument(
+                "Sdl.gen.cs",
+                """
+                public class Sdl
+                {
+                    public static delegate* <int, sbyte**, int> main => &SDL_main;
+
+                    [NameAffix("Prefix", "SharedPrefix", "SDL")]
+                    public static extern int SDL_main(int argc, sbyte** argv);
+                }
+                """
+            )
+            .Project;
+
+        var context = new DummyModContext() { SourceProject = project };
+
+        var prettifyNames = new PrettifyNames(
+            NullLogger<PrettifyNames>.Instance,
+            new DummyOptions<PrettifyNames.Configuration>(new PrettifyNames.Configuration())
+            {
+                Value =
+                {
+                    Affixes =
+                    {
+                        {
+                            "SharedPrefix",
+                            new PrettifyNames.NameAffixConfiguration()
+                            {
+                                DiscriminatorPriority = 0,
+                                IsDiscriminator = true,
+                            }
+                        },
+                    },
+                },
+            }
+        );
+
+        await prettifyNames.ExecuteAsync(context);
+
+        // The two members should not be output as the same name
+        // Expected:
+        // Property is named "MainValue"
+        // Method is named "Main"
         var result = await context.SourceProject.Documents.First().GetSyntaxRootAsync();
         await Verify(result!.NormalizeWhitespace().ToString());
     }

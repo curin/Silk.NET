@@ -32,13 +32,21 @@ public static class NameAffixer
 
                 var argumentList = attribute.ArgumentList;
                 if (
-                    argumentList != null
-                    && argumentList.Arguments[0].Expression
-                        is LiteralExpressionSyntax { Token.Value: string type }
-                    && argumentList.Arguments[1].Expression
-                        is LiteralExpressionSyntax { Token.Value: string category }
-                    && argumentList.Arguments[2].Expression
-                        is LiteralExpressionSyntax { Token.Value: string affix }
+                    argumentList == null
+                    || argumentList.Arguments[0].Expression
+                        is not LiteralExpressionSyntax { Token.Value: string type }
+                    || argumentList.Arguments[1].Expression
+                        is not LiteralExpressionSyntax { Token.Value: string category }
+                )
+                {
+                    continue;
+                }
+
+                if (
+                    argumentList.Arguments[2].Expression is LiteralExpressionSyntax
+                    {
+                        Token.Value: string affix
+                    }
                 )
                 {
                     affixes =
@@ -51,6 +59,36 @@ public static class NameAffixer
                             declarationOrder
                         ),
                     ];
+
+                    declarationOrder++;
+                }
+                else if (
+                    argumentList.Arguments[2].Expression is InvocationExpressionSyntax
+                    {
+                        Expression: IdentifierNameSyntax { Identifier.ValueText: "nameof" },
+                        ArgumentList.Arguments: [
+                            {
+                                Expression: IdentifierNameSyntax
+                                {
+                                    Identifier.ValueText: var referencedAffix,
+                                },
+                            },
+                        ],
+                    }
+                )
+                {
+                    affixes =
+                    [
+                        .. affixes,
+                        new NameAffix(
+                            type == "Prefix" ? NameAffixType.Prefix : NameAffixType.Suffix,
+                            category,
+                            referencedAffix,
+                            declarationOrder,
+                            true
+                        ),
+                    ];
+
                     declarationOrder++;
                 }
             }
@@ -92,17 +130,92 @@ public static class NameAffixer
                 Literal($"\"{affixType}\"", affixType)
             )
         );
+
         var categoryArgument = AttributeArgument(
             LiteralExpression(
                 SyntaxKind.StringLiteralExpression,
                 Literal($"\"{category}\"", category)
             )
         );
+
         var affixArgument = AttributeArgument(
             LiteralExpression(SyntaxKind.StringLiteralExpression, Literal($"\"{affix}\"", affix))
         );
-        var argumentList = AttributeArgumentList([typeArgument, categoryArgument, affixArgument]);
 
+        var argumentList = AttributeArgumentList([typeArgument, categoryArgument, affixArgument]);
+        var attribute = AttributeList([Attribute(IdentifierName("NameAffix"), argumentList)]);
+
+        return addToInner ? [attribute, .. attributeLists] : [.. attributeLists, attribute];
+    }
+
+    /// <summary>
+    /// This is similar to <see cref="AddNameAffix(IEnumerable{AttributeListSyntax},NameAffixType,string,string,bool)"/>
+    /// but allows the name of another symbol to be referenced.
+    /// <para/>
+    /// This ensures transformations applied to the referenced symbol's name
+    /// are also applied to this affix.
+    /// </summary>
+    /// <remarks>
+    /// This allows compound names to be handled more cleanly.
+    /// <para/>
+    /// For simplicity, only names within the same name container are currently supported.
+    /// This lets us skip sorting across different containers.
+    /// This should cover most real world use cases since if something is nested and
+    /// has the parent name as a prefix, then the prefix is likely unnecessary.
+    /// </remarks>
+    /// <example>
+    /// For example, <c>PerformanceCounterDescriptionARM</c> can be used as a referenced prefix for <c>PerformanceCounterDescriptionARMName</c>.
+    /// If <c>PerformanceCounterDescriptionARM</c> becomes <c>ARMPerformanceCounterDescription</c>,
+    /// then <c>PerformanceCounterDescriptionARMName</c> will also be output as <c>ARMPerformanceCounterDescriptionName</c>.
+    /// </example>
+    public static SyntaxList<AttributeListSyntax> AddReferencedNameAffix(
+        this IEnumerable<AttributeListSyntax> attributeLists,
+        NameAffixType type,
+        string category,
+        string referencedAffix,
+        bool addToInner = false
+    )
+    {
+        var affixType = type switch
+        {
+            NameAffixType.Prefix => "Prefix",
+            NameAffixType.Suffix => "Suffix",
+            _ => throw new ArgumentOutOfRangeException(nameof(type)),
+        };
+
+        var typeArgument = AttributeArgument(
+            LiteralExpression(
+                SyntaxKind.StringLiteralExpression,
+                Literal($"\"{affixType}\"", affixType)
+            )
+        );
+
+        var categoryArgument = AttributeArgument(
+            LiteralExpression(
+                SyntaxKind.StringLiteralExpression,
+                Literal($"\"{category}\"", category)
+            )
+        );
+
+        // nameof(referencedAffix)
+        var affixArgument = AttributeArgument(
+            InvocationExpression(
+                    IdentifierName(
+                        Identifier(
+                            TriviaList(),
+                            SyntaxKind.NameOfKeyword,
+                            "nameof",
+                            "nameof",
+                            TriviaList()
+                        )
+                    )
+                )
+                .WithArgumentList(
+                    ArgumentList(SingletonSeparatedList(Argument(IdentifierName(referencedAffix))))
+                )
+        );
+
+        var argumentList = AttributeArgumentList([typeArgument, categoryArgument, affixArgument]);
         var attribute = AttributeList([Attribute(IdentifierName("NameAffix"), argumentList)]);
 
         return addToInner ? [attribute, .. attributeLists] : [.. attributeLists, attribute];

@@ -322,11 +322,20 @@ public partial class ExtractNestedTyping(ILogger<ExtractNestedTyping> logger) : 
                     continue;
                 }
 
-                var iden = $"{node.Identifier}_{match.Groups[1].Value}";
+                var iden = $"{node.Identifier}{match.Groups[1].Value}";
                 _typeRenames[struc.Identifier.ToString()] = iden;
                 struc =
-                    VisitStructDeclaration(struc.WithIdentifier(Identifier(iden)))
-                        as StructDeclarationSyntax
+                    VisitStructDeclaration(
+                        struc
+                            .WithIdentifier(Identifier(iden))
+                            .WithAttributeLists(
+                                struc.AttributeLists.AddReferencedNameAffix(
+                                    NameAffixType.Prefix,
+                                    "NestedStructParent",
+                                    node.Identifier.ToString()
+                                )
+                            )
+                    ) as StructDeclarationSyntax
                     ?? struc;
                 ExtractedNestedStructs.Add(struc);
                 members = members.RemoveAt(i--);
@@ -529,6 +538,11 @@ public partial class ExtractNestedTyping(ILogger<ExtractNestedTyping> logger) : 
                             : default
                     )
                         .WithNativeName(currentNativeTypeName)
+                        .AddReferencedNameAffix(
+                            NameAffixType.Prefix,
+                            "FunctionPointerParent",
+                            currentNativeTypeName
+                        )
                         .AddNameAffix(
                             NameAffixType.Suffix,
                             "FunctionPointerDelegateType",
@@ -618,8 +632,6 @@ public partial class ExtractNestedTyping(ILogger<ExtractNestedTyping> logger) : 
             return base.VisitPredefinedType(node);
         }
 
-        private readonly NameTrimmer _nameTrimmer = new();
-
         // This code can probably be better.
         public (
             Dictionary<
@@ -643,7 +655,7 @@ public partial class ExtractNestedTyping(ILogger<ExtractNestedTyping> logger) : 
                 var (enumName, enumType) in _numericTypeNames.OrderByDescending(x => x.Key.Length)
             )
             {
-                var enumTrimmingName = _nameTrimmer.GetTrimmingName(null, enumName, true);
+                var enumTrimmingName = NameSplitter.Underscore(enumName);
                 (EnumDeclarationSyntax, HashSet<string>, HashSet<string>)? extractedEnum = enumType
                     is { } theType
                     ? (
@@ -663,11 +675,13 @@ public partial class ExtractNestedTyping(ILogger<ExtractNestedTyping> logger) : 
                     // taking casing into account). It is possible that this could be expanded, but this should be done
                     // carefully to ensure we don't light up prematurely.
                     var nextConst = false;
-                    var trimmingName = _nameTrimmer.GetTrimmingName(null, constant, false);
-                    foreach (var enumCandidate in (IEnumerable<string>)[enumName, enumTrimmingName])
+                    var trimmingName = NameSplitter.Underscore(constant);
+                    foreach (
+                        var enumCandidate in (ReadOnlySpan<string>)[enumName, enumTrimmingName]
+                    )
                     {
                         foreach (
-                            var constCandidate in (IEnumerable<string>)[constant, trimmingName]
+                            var constCandidate in (ReadOnlySpan<string>)[constant, trimmingName]
                         )
                         {
                             // Make sure the constant name starts with the enum name, and that there is clearly a word
