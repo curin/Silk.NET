@@ -86,8 +86,8 @@ public class TransformHandles(
             }
         }
 
-        // Do the two following transformation to all references of the handle types:
-        // 2. Reduce pointer dimensions
+        // Reduce pointer dimensions
+        // The -Handle suffix will be applied later by PrettifyNames if the user configures it to do so
         ctx.SourceProject = project;
         await LocationTransformationUtils.ModifyAllReferencesAsync(
             ctx,
@@ -115,9 +115,7 @@ public class TransformHandles(
             var syntaxRoot = await syntaxTree.GetRootAsync(ct);
 
             // Rewrite handle struct to include handle members
-            document = document.WithSyntaxRoot(
-                handleTypeRewriter.Visit(syntaxRoot).NormalizeWhitespace()
-            );
+            document = document.WithSyntaxRoot(handleTypeRewriter.Visit(syntaxRoot));
 
             project = document.Project;
         }

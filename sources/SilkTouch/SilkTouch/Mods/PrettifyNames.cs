@@ -195,8 +195,14 @@ public class PrettifyNames(
 
         // Change the filenames where appropriate.
         proj = ctx.SourceProject;
+
         var typeNames = newNames.GetValueOrDefault("", []);
         var typeNamesLongestFirst = typeNames.OrderByDescending(x => x.Key.Length).ToArray();
+
+        var documentPaths = proj
+            .Documents.Select(d => d.RelativePath())
+            .Where(d => d != null)
+            .ToHashSet();
 
         foreach (var docId in proj.DocumentIds)
         {
@@ -206,6 +212,7 @@ public class PrettifyNames(
                 continue;
             }
 
+            // Find best matching document for renamed types
             var firstMatch = typeNamesLongestFirst.FirstOrDefault(x =>
                 doc.FilePath.Contains(x.Key) || doc.Name.Contains(x.Key)
             );
@@ -214,43 +221,36 @@ public class PrettifyNames(
                 continue;
             }
 
-            var originalName = doc.Name;
-            doc = doc.ReplaceNameAndPath(oldName, newName);
-
-            var found = false;
-            if (doc.FilePath is not null)
+            // Save syntax tree so we can restore it later
+            // This is because modifying the document can cause it to be reparsed
+            // C# discord: https://discord.com/channels/143867839282020352/598678594750775301/1494176147351535687
+            var syntaxRoot = await doc.GetSyntaxRootAsync(ct);
+            if (syntaxRoot == null)
             {
-                foreach (var checkDocId in proj.DocumentIds)
-                {
-                    if (checkDocId == docId)
-                    {
-                        continue;
-                    }
-
-                    var checkDoc = proj.GetDocument(checkDocId);
-                    if (checkDoc?.FilePath is null)
-                    {
-                        continue;
-                    }
-
-                    if (checkDoc.FilePath == doc.FilePath)
-                    {
-                        found = true;
-                        break;
-                    }
-                }
+                continue;
             }
 
-            if (found)
+            // Rename doc and update path
+            var originalName = doc.Name;
+            var originalPath = doc.RelativePath();
+            doc = doc.ReplaceNameAndPath(oldName, newName);
+            var newPath = doc.RelativePath();
+
+            // Restore syntax tree
+            doc = doc.WithSyntaxRoot(syntaxRoot);
+
+            // Check for path conflict
+            documentPaths.Remove(originalPath);
+            if (!documentPaths.Add(newPath))
             {
                 logger.LogError(
-                    $"{originalName} -> {doc.Name} failed to rename file as a file already exists at {doc.FilePath}"
+                    $"{originalName} -> {doc.Name} failed to rename file as a file already exists at {newPath}"
                 );
+
+                continue;
             }
-            else
-            {
-                proj = doc.Project;
-            }
+
+            proj = doc.Project;
         }
 
         ctx.SourceProject = proj;
@@ -1132,17 +1132,6 @@ public class PrettifyNames(
                 }
             }
 
-            // These collections are used later.
-            // These keep track of method discriminators to determine whether we have incompatible overloads.
-            // We keep track of the first original name so that we can add it to conflictingOriginalNames when we
-            // do discover a conflict (along with the original name of the actual conflict).
-            var methodDiscriminators =
-                new Dictionary<
-                    string,
-                    (string? FirstOriginalName, List<MethodDeclarationSyntax> Methods)
-                >();
-            var conflictingOriginalNames = new HashSet<string>();
-
             // This loop cannot be part of the loop below because it modifies the primaries
             foreach (var (scope, members) in context.Names)
             {
@@ -1207,6 +1196,17 @@ public class PrettifyNames(
                     }
                 }
             }
+
+            // These collections are used later.
+            // These keep track of method discriminators to determine whether we have incompatible overloads.
+            // We keep track of the first original name so that we can add it to conflictingOriginalNames when we
+            // do discover a conflict (along with the original name of the actual conflict).
+            var methodDiscriminators =
+                new Dictionary<
+                    string,
+                    (string? FirstOriginalName, List<MethodDeclarationSyntax> Methods)
+                >();
+            var conflictingOriginalNames = new HashSet<string>();
 
             foreach (var (scope, members) in context.Names)
             {
